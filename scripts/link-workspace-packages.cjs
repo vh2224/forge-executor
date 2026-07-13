@@ -88,6 +88,28 @@ for (const pkg of getLinkablePackages()) {
   }
 }
 
+// Legacy-name bridge (Forge Executor rename @gsd→@forge): the vendored
+// pi-coding-agent's compiled dist still imports @gsd/agent-core|agent-modes.
+// The manifest now scopes those packages under @forge, so create @gsd/<name>
+// links pointing at the same package dirs — otherwise consumer installs hit
+// ERR_MODULE_NOT_FOUND on the old specifier (validate-pack smoke covers this).
+for (const pkg of getLinkablePackages()) {
+  if (pkg.scope !== '@forge') continue
+  const legacyTarget = join(scopeDirs['@gsd'], pkg.name)
+  if (!existsSync(pkg.path) || existsSync(legacyTarget)) continue
+  try {
+    symlinkSync(pkg.path, legacyTarget, 'junction')
+    linked++
+  } catch {
+    try {
+      cpSync(pkg.path, legacyTarget, { recursive: true })
+      copied++
+    } catch (err) {
+      failures.push({ pkg: `@gsd/${pkg.name} (legacy bridge)`, reason: err && err.message ? err.message : String(err) })
+    }
+  }
+}
+
 // Vendored pi-coding-agent still resolves @earendil-works/* at runtime.
 const earendilDir = join(REPO_ROOT, 'node_modules', '@earendil-works')
 if (!existsSync(earendilDir)) {
