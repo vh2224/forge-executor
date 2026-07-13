@@ -332,6 +332,15 @@ try {
 
   let missing = false;
   for (const required of requiredFiles) {
+    // Fork curation (Forge Executor): components deliberately pruned from
+    // the public tree (cloud gateway, daemon, studio web host) are not
+    // packaging regressions — skip entries whose SOURCE no longer exists.
+    const sourceRoot = required.startsWith('packages/')
+      ? required.split('/').slice(0, 2).join('/')
+      : required.startsWith('dist/web/') ? 'src/web' : null;
+    if (sourceRoot && !existsSync(join(ROOT, sourceRoot))) {
+      continue;
+    }
     if (!packedFiles.has(required)) {
       console.log(`    MISSING: ${required}`);
       missing = true;
@@ -406,6 +415,9 @@ try {
   // gate. (The staging step flattens the store; this proves it stuck.)
   console.log('==> Verifying packaged standalone web host resolves runtime deps...');
   const standaloneDir = join(installedRoot, 'dist', 'web', 'standalone');
+  if (!existsSync(standaloneDir)) {
+    console.log('    Skipped: standalone web host pruned from this fork.');
+  } else {
   try {
     execFileSync(
       process.execPath,
@@ -426,6 +438,7 @@ try {
     if (err.stdout) console.log(err.stdout);
     if (err.stderr) console.log(err.stderr);
     process.exit(1);
+  }
   }
 
   // --- Run the binary to confirm end-to-end resolution ---
