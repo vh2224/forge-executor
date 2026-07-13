@@ -1,6 +1,6 @@
 {
   "name": "@forge/agent-modes",
-  "version": "1.8.1",
+  "version": "2.0.0",
   "description": "GSD run modes and CLI layer",
   "type": "module",
   "gsd": {

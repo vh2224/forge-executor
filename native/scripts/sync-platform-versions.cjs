@@ -17,9 +17,9 @@ const npmDir = path.resolve(__dirname, "..", "npm");
 const rootPkgPath = path.join(rootDir, "package.json");
 const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
 const version = rootPkg.version;
-const optionalDependencyVersion = resolveEngineOptionalDependencyVersion(version);
+const optionalDependencyVersion = resolveEngineOptionalDependencyVersion(version, rootPkg);
 
-console.log(`[sync-platform-versions] Syncing to version ${version}`);
+console.log(`[sync-platform-versions] Syncing platform packages to engine version ${optionalDependencyVersion}`);
 if (optionalDependencyVersion !== version) {
   console.log(
     `[sync-platform-versions] optionalDependencies pinned to stable engine version ${optionalDependencyVersion}`,
@@ -44,12 +44,12 @@ for (const platform of platformPackages) {
     continue;
   }
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-  if (pkg.version !== version) {
-    console.log(`  ${platform}: ${pkg.version} -> ${version}`);
-    pkg.version = version;
+  if (pkg.version !== optionalDependencyVersion) {
+    console.log(`  ${platform}: ${pkg.version} -> ${optionalDependencyVersion}`);
+    pkg.version = optionalDependencyVersion;
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
   } else {
-    console.log(`  ${platform}: already ${version}`);
+    console.log(`  ${platform}: already ${optionalDependencyVersion}`);
   }
 
   const dependencyName = `@opengsd/engine-${platform}`;

@@ -55,7 +55,17 @@ const STABLE_SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
  * build or publish per-platform engines. Strip any prerelease suffix back to
  * the base X.Y.Z so optionalDependencies pin to a version that actually exists.
  */
-function resolveEngineOptionalDependencyVersion(rootVersion) {
+function resolveEngineOptionalDependencyVersion(rootVersion, rootPkg) {
+  // Fork pin (Forge Executor 2026-07-13): `engineVersion` in package.json
+  // pins the ENTIRE native surface (optionalDependencies, platform package
+  // templates, Cargo.toml/lock) to an upstream @opengsd/engine-* release that
+  // actually exists on npm. Sanctioned because native/ is byte-identical to
+  // the fork point (zero fork commits) — the JS package versions freely while
+  // the engines stay at the upstream build until we ship our own.
+  const pinned = rootPkg?.engineVersion;
+  if (typeof pinned === "string" && STABLE_SEMVER_PATTERN.test(pinned)) {
+    return pinned;
+  }
   const prereleaseMatch = rootVersion.match(/^(\d+\.\d+\.\d+)-(?:dev|next)\.[0-9a-f]+$/i);
   if (prereleaseMatch) {
     return prereleaseMatch[1];
@@ -244,6 +254,11 @@ function getNativeLockVersions(root) {
 }
 
 function verifyPackage(root, packageDir, expectedVersion, issues) {
+  // Fork curation (Forge Executor): dirs pruned from the public tree
+  // (upstream samples/services never shipped) are not version-sync issues.
+  if (!fs.existsSync(path.join(root, packageDir, "package.json"))) {
+    return;
+  }
   const filePath = packagePath(root, packageDir);
   if (!fs.existsSync(filePath)) {
     issues.push(`${packageDir}/package.json is missing`);
@@ -285,14 +300,13 @@ function verifyVersionSync(root) {
   for (const packageDir of RELEASE_WORKSPACE_PACKAGE_DIRS) {
     verifyPackage(root, packageDir, expectedVersion, issues);
   }
+  const rootPkg = readJson(path.join(root, "package.json"));
+  const expectedOptionalDepVersion = resolveEngineOptionalDependencyVersion(expectedVersion, rootPkg);
   for (const packageDir of PLATFORM_PACKAGE_DIRS) {
-    verifyPackage(root, packageDir, expectedVersion, issues);
+    verifyPackage(root, packageDir, expectedOptionalDepVersion, issues);
   }
   verifyPackage(root, "pkg", expectedVersion, issues);
   verifyLockfile(root, expectedVersion, issues);
-
-  const rootPkg = readJson(path.join(root, "package.json"));
-  const expectedOptionalDepVersion = resolveEngineOptionalDependencyVersion(expectedVersion);
   for (const platformDir of PLATFORM_PACKAGE_DIRS) {
     const platform = platformDir.replace("native/npm/", "");
     const depName = `@opengsd/engine-${platform}`;
@@ -305,12 +319,12 @@ function verifyVersionSync(root) {
   }
 
   const nativeCargoVersion = getNativeCargoVersion(root);
-  if (nativeCargoVersion !== undefined && nativeCargoVersion !== expectedVersion) {
-    issues.push(`native/Cargo.toml workspace package version is ${nativeCargoVersion}, expected ${expectedVersion}`);
+  if (nativeCargoVersion !== undefined && nativeCargoVersion !== expectedOptionalDepVersion) {
+    issues.push(`native/Cargo.toml workspace package version is ${nativeCargoVersion}, expected ${expectedOptionalDepVersion}`);
   }
   for (const [name, version] of getNativeLockVersions(root)) {
-    if (version !== expectedVersion) {
-      issues.push(`native/Cargo.lock ${name} version is ${version}, expected ${expectedVersion}`);
+    if (version !== expectedOptionalDepVersion) {
+      issues.push(`native/Cargo.lock ${name} version is ${version}, expected ${expectedOptionalDepVersion}`);
     }
   }
   verifyHermesVersion(root, expectedVersion, issues);

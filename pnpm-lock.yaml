@@ -215,21 +215,6 @@ importers:
         specifier: ^2.9.0
         version: 2.16.2
 
-  extensions/google-search:
-    dependencies:
-      '@google/genai':
-        specifier: ^1.40.0
-        version: 1.52.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
-      '@gsd/pi-coding-agent':
-        specifier: workspace:*
-        version: link:../../packages/pi-coding-agent
-      '@gsd/pi-tui':
-        specifier: workspace:*
-        version: link:../../packages/pi-tui
-      '@sinclair/typebox':
-        specifier: ^0.34.41
-        version: 0.34.49
-
   packages/contracts: {}
 
   packages/forge-agent-core:
