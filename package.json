@@ -1,6 +1,6 @@
 {
   "name": "forge-executor",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Forge Executor — autonomous multi-LLM engineering harness: milestones, dialectic reviews, aptitude-based routing (Claude, GPT, Grok) with markdown-as-truth state",
   "license": "MIT",
   "repository": {

@@ -924,3 +924,175 @@ describe("S03/T02 — /forge task: review dialético phase", () => {
     }
   });
 });
+
+/**
+ * Seed an existing task store on disk WITHOUT dispatching — descriptor + an
+ * optional substantive PLAN/SUMMARY — to exercise the `--list`/`--resume`
+ * subcommands against pre-existing state.
+ */
+function seedTaskDir(
+  cwd: string,
+  taskId: string,
+  opts: { desc?: string; plan?: boolean; summary?: boolean } = {},
+): void {
+  const dir = join(cwd, ".gsd", "tasks", taskId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${taskId}-TASK.md`),
+    [`# ${taskId}`, "", "## Descrição", "", opts.desc ?? "descrição recuperada", ""].join("\n"),
+  );
+  if (opts.plan) writeCompliantPlan(cwd, taskId);
+  if (opts.summary) writeSubstantiveSummary(cwd, taskId);
+}
+
+describe("/forge task --list", () => {
+  test("nenhuma task: mensagem informativa, zero dispatch", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "forge-task-list-empty-"));
+    seedTimestampIdPref(cwd);
+    try {
+      const session = new ForgeAutoSession();
+      let dispatched = false;
+      const { ctx, notifications } = fakeCtx(cwd, () => {
+        dispatched = true;
+      });
+      await runTaskCommand(ctx, ["--list"], session);
+      assert.equal(dispatched, false);
+      assert.equal(session.active, false);
+      assert.match(notifications.at(-1)?.[0] ?? "", /nenhuma task/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("mistura OPEN/DONE: rotula cada uma pelo gate de SUMMARY, sem dispatch", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "forge-task-list-mixed-"));
+    seedTimestampIdPref(cwd);
+    try {
+      seedTaskDir(cwd, "TASK-148", { plan: true }); // OPEN: plano, sem summary
+      seedTaskDir(cwd, "TASK-149", { plan: true, summary: true }); // DONE
+      const session = new ForgeAutoSession();
+      let dispatched = false;
+      const { ctx, notifications } = fakeCtx(cwd, () => {
+        dispatched = true;
+      });
+      await runTaskCommand(ctx, ["--list"], session);
+      assert.equal(dispatched, false);
+      const note = notifications.at(-1)?.[0] ?? "";
+      assert.match(note, /Tasks \(2, 1 aberta\(s\)\)/);
+      assert.match(note, /OPEN\s+TASK-148/);
+      assert.match(note, /DONE\s+TASK-149/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("/forge task --resume", () => {
+  test("plano presente: pula task-plan, despacha SÓ task-execute, reusa o ID", async () => {
+    const prevTimeout = process.env.FORGE_UNIT_TIMEOUT_MS;
+    process.env.FORGE_UNIT_TIMEOUT_MS = "30000";
+    const cwd = mkdtempSync(join(tmpdir(), "forge-task-resume-exec-"));
+    seedTimestampIdPref(cwd);
+    try {
+      seedTaskDir(cwd, "TASK-148", { plan: true }); // OPEN with a valid plan
+      const session = new ForgeAutoSession();
+      const capturedPrompts: string[] = [];
+      const { ctx, notifications } = fakeCtx(cwd, (content) => {
+        capturedPrompts.push(content);
+        if (content.includes("# Unit: task-execute")) {
+          writeSubstantiveSummary(cwd, "TASK-148");
+          deliverUnitResult(
+            { status: "done", summary: "retomada executada", artifacts: ["src/bar.ts"] },
+            session.currentRendezvousToken ?? undefined,
+          );
+        }
+      });
+
+      await assert.doesNotReject(runTaskCommand(ctx, ["--resume", "TASK-148"], session));
+
+      assert.equal(capturedPrompts.length, 1, "only ONE dispatch — the plan phase was skipped");
+      assert.match(capturedPrompts[0]!, /# Unit: task-execute/);
+      // No new id minted — the store still has exactly the one seeded dir.
+      assert.deepEqual(listTaskDirs(cwd), ["TASK-148"]);
+      const events = readEvents(cwd);
+      assert.ok(!events.some((e) => e.unit === "task-plan"), "no task-plan events on resume-with-plan");
+      const finalNote = notifications.at(-1);
+      assert.equal(finalNote?.[1], "info");
+      assert.match(finalNote?.[0] ?? "", /^\/forge task TASK-148: done — retomada executada \(src\/bar\.ts\)$/);
+      assert.equal(session.active, false, "the finally restored the session");
+    } finally {
+      if (prevTimeout === undefined) delete process.env.FORGE_UNIT_TIMEOUT_MS;
+      else process.env.FORGE_UNIT_TIMEOUT_MS = prevTimeout;
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("referência por número nu (148) resolve TASK-148", async () => {
+    const prevTimeout = process.env.FORGE_UNIT_TIMEOUT_MS;
+    process.env.FORGE_UNIT_TIMEOUT_MS = "30000";
+    const cwd = mkdtempSync(join(tmpdir(), "forge-task-resume-num-"));
+    seedTimestampIdPref(cwd);
+    try {
+      seedTaskDir(cwd, "TASK-148", { plan: true });
+      const session = new ForgeAutoSession();
+      const capturedPrompts: string[] = [];
+      const { ctx } = fakeCtx(cwd, (content) => {
+        capturedPrompts.push(content);
+        if (content.includes("# Unit: task-execute")) {
+          writeSubstantiveSummary(cwd, "TASK-148");
+          deliverUnitResult(
+            { status: "done", summary: "ok", artifacts: [] },
+            session.currentRendezvousToken ?? undefined,
+          );
+        }
+      });
+      await assert.doesNotReject(runTaskCommand(ctx, ["--resume", "148"], session));
+      assert.match(capturedPrompts[0] ?? "", /# Unit: task-execute/);
+      assert.ok(capturedPrompts[0]!.includes("TASK-148"), "the bare number resolved to TASK-148");
+    } finally {
+      if (prevTimeout === undefined) delete process.env.FORGE_UNIT_TIMEOUT_MS;
+      else process.env.FORGE_UNIT_TIMEOUT_MS = prevTimeout;
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("task já concluída: reporta 'já concluída', zero dispatch", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "forge-task-resume-done-"));
+    seedTimestampIdPref(cwd);
+    try {
+      seedTaskDir(cwd, "TASK-150", { plan: true, summary: true });
+      const session = new ForgeAutoSession();
+      let dispatched = false;
+      const { ctx, notifications } = fakeCtx(cwd, () => {
+        dispatched = true;
+      });
+      await runTaskCommand(ctx, ["--resume", "TASK-150"], session);
+      assert.equal(dispatched, false, "a completed task never re-dispatches");
+      assert.match(notifications.at(-1)?.[0] ?? "", /já concluída/);
+      assert.equal(session.active, false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("ID inexistente: warning, zero dispatch, session intacta", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "forge-task-resume-miss-"));
+    seedTimestampIdPref(cwd);
+    try {
+      seedTaskDir(cwd, "TASK-148", { plan: true });
+      const session = new ForgeAutoSession();
+      let dispatched = false;
+      const { ctx, notifications } = fakeCtx(cwd, () => {
+        dispatched = true;
+      });
+      await runTaskCommand(ctx, ["--resume", "TASK-999"], session);
+      assert.equal(dispatched, false);
+      assert.equal(session.active, false);
+      const note = notifications.at(-1);
+      assert.equal(note?.[1], "warning");
+      assert.match(note?.[0] ?? "", /nenhuma task casou/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});

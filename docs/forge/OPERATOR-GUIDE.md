@@ -107,6 +107,9 @@ pools/roles disponíveis e criar a primeira milestone.
 | `/forge init` | Cria o esqueleto `.gsd/` num projeto novo; com `.gsd/` existente vira doctor-lite (`--repair`, `--gitignore`). |
 | `/forge next` | Executa somente a próxima unidade. |
 | `/forge auto` | Executa o loop até uma condição terminal. |
+| `/forge task "<descrição>"` | Cria e executa uma task solta (plan → execute → review), sem milestone. |
+| `/forge task --list` | Lista as tasks em `.gsd/tasks/`, rotuladas `OPEN`/`DONE` + quais artefatos existem. |
+| `/forge task --resume <ID>` | Retoma uma task existente, pulando a fase cujo artefato já está em disco. Aceita o ID completo (`TASK-148`, `T-…-slug`) ou o número nu (`148`). |
 | `/forge review <alvo>` | Executa o review dialético sob demanda. |
 | `/forge accounts list` | Lista contas por provider, sem segredos. |
 | `/forge accounts add <provider>` | Inicia login OAuth nativo, quando suportado. |

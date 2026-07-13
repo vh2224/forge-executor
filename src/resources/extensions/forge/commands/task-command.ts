@@ -40,7 +40,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { readState, appendEvent, resolveTaskId, readEvents, type ForgeEvent, type NextUnit } from "../state/index.js";
@@ -82,7 +82,105 @@ function output(ctx: ExtensionCommandContext, message: string, level: "info" | "
   }
 }
 
-const TASK_USAGE = '/forge task "<descrição>"';
+const TASK_USAGE =
+  '/forge task "<descrição>"  |  /forge task --list  |  /forge task --resume <ID>';
+
+/** One task directory's derived state, for `--list` and resume gating. */
+interface TaskEntry {
+  id: string;
+  status: "DONE" | "OPEN";
+  hasPlan: boolean;
+  hasSummary: boolean;
+}
+
+/**
+ * Enumerate `.gsd/tasks/*` and derive each entry's completion state from the
+ * SAME gates the command already enforces: a task is DONE only when its
+ * `<ID>-SUMMARY.md` clears `verifyTaskSummary` (>10 non-blank lines) — anything
+ * else is OPEN and resumable. Never throws: a missing `.gsd/tasks/` yields [].
+ */
+function listTaskEntries(cwd: string): TaskEntry[] {
+  const tasksDir = join(cwd, ".gsd", "tasks");
+  let names: string[];
+  try {
+    names = readdirSync(tasksDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+  names.sort();
+  return names.map((id) => {
+    const hasPlan = verifyTaskPlan(join(tasksDir, id, `${id}-PLAN.md`)).ok;
+    const summaryCheck = verifyTaskSummary(cwd, id);
+    return { id, status: summaryCheck.ok ? "DONE" : "OPEN", hasPlan, hasSummary: summaryCheck.ok };
+  });
+}
+
+/**
+ * Resolve an operator-typed task reference to an actual directory name. Accepts
+ * the exact id (`TASK-148`, `T-2026…-slug`), a case-insensitive match, or a
+ * bare/partial token (`148`) matched against the numeric tail of legacy
+ * `TASK-###` ids or as a unique substring of any id. Returns the resolved id,
+ * `null` when nothing matches, or `{ ambiguous }` when a token matches >1 task
+ * (so the caller can list the candidates instead of guessing).
+ */
+function resolveExistingTaskId(
+  cwd: string,
+  needle: string,
+): { id: string } | { ambiguous: string[] } | null {
+  const entries = listTaskEntries(cwd).map((e) => e.id);
+  if (entries.length === 0) return null;
+  const raw = needle.trim();
+  if (!raw) return null;
+
+  // 1. Exact, then case-insensitive exact.
+  if (entries.includes(raw)) return { id: raw };
+  const ciExact = entries.filter((id) => id.toLowerCase() === raw.toLowerCase());
+  if (ciExact.length === 1) return { id: ciExact[0] };
+
+  // 2. Bare number → legacy TASK-### (with/without zero-pad) or numeric tail.
+  if (/^\d+$/.test(raw)) {
+    const n = parseInt(raw, 10);
+    const numMatches = entries.filter((id) => {
+      const m = id.match(/(?:^|[-_])0*(\d+)$/);
+      return m ? parseInt(m[1], 10) === n : false;
+    });
+    if (numMatches.length === 1) return { id: numMatches[0] };
+    if (numMatches.length > 1) return { ambiguous: numMatches };
+  }
+
+  // 3. Unique substring (case-insensitive) — covers a typed slug or prefix.
+  const subMatches = entries.filter((id) => id.toLowerCase().includes(raw.toLowerCase()));
+  if (subMatches.length === 1) return { id: subMatches[0] };
+  if (subMatches.length > 1) return { ambiguous: subMatches };
+
+  return null;
+}
+
+/**
+ * Recover the original operator request from `<ID>-TASK.md`'s `## Descrição`
+ * section (written by `writeTaskDescriptor`). Resume needs the desc for the
+ * review phase's diff-scoping and for honest journaling. Falls back to the id
+ * when the descriptor is missing/unreadable — resume must never hard-fail on a
+ * cosmetic recovery.
+ */
+function recoverTaskDesc(cwd: string, id: string): string {
+  const descriptorPath = join(cwd, ".gsd", "tasks", id, `${id}-TASK.md`);
+  try {
+    const text = readFileSync(descriptorPath, "utf-8");
+    const marker = text.indexOf("## Descrição");
+    if (marker >= 0) {
+      const body = text
+        .slice(text.indexOf("\n", marker) + 1)
+        .trim();
+      if (body) return body;
+    }
+  } catch {
+    // fall through to the id
+  }
+  return id;
+}
 
 /** The outcome of one dispatched phase — either a delivered result or a synthetic timeout, plus the resolved TASK_ID. */
 export interface TaskPhaseOutcome {
@@ -509,54 +607,33 @@ async function runTaskReviewPhase(
 }
 
 /**
- * Run `/forge task "<descrição>"`.
- *
- * `session` is a test seam (default the process singleton, mirrors
- * `runResearchModelsCommand`/`runFixCommand`/`runAuto`); `options` (S03/T02)
- * is a second test seam mirroring `ReviewCommandOptions`, kept as a trailing
- * 4th parameter so every existing 3-positional-argument call site (11
- * pre-S03/T02 tests) stays byte-compatible.
+ * Best-effort milestone id (S02-PLAN Interpretation Decision 3, mirrors
+ * D-S04-1): this command never requires an active milestone. A missing or
+ * unreadable STATE.md degrades to "", which `identityBlock` (prompts/
+ * compose.ts) reads as "omit the Milestone line".
  */
-export async function runTaskCommand(
-  ctx: ExtensionCommandContext,
-  rest: string[],
-  session: ForgeAutoSession = getForgeAutoSession(),
-  options: TaskCommandOptions = {},
-): Promise<void> {
-  const desc = rest.join(" ").trim().replace(/^["'](.*)["']$/, "$1").trim();
-  if (!desc) {
-    output(ctx, `Uso: ${TASK_USAGE}`, "warning");
-    return;
-  }
-
-  // Guard de reentrância — mesmo texto-padrão do runAuto/research-models/fix.
-  if (session.active) {
-    output(ctx, "/forge task: loop já ativo — aguarde a execução atual terminar.", "warning");
-    return;
-  }
-
-  // Repo-level unit (S02-PLAN Interpretation Decision 3, mirrors D-S04-1):
-  // milestoneId is BEST-EFFORT — this command never requires an active
-  // milestone. A missing or unreadable STATE.md degrades to "", which
-  // `identityBlock` (prompts/compose.ts) reads as "omit the Milestone line".
-  let milestoneId = "";
-  const statePath = join(ctx.cwd, ".gsd", "STATE.md");
+function readMilestoneIdBestEffort(cwd: string): string {
+  const statePath = join(cwd, ".gsd", "STATE.md");
   if (existsSync(statePath)) {
     try {
-      milestoneId = readState(ctx.cwd).milestone;
+      return readState(cwd).milestone;
     } catch {
-      milestoneId = "";
+      return "";
     }
   }
+  return "";
+}
 
-  // Mint the ID, atomically reserve its directory (R1 — closes the
-  // same-second/stale-directory collision gap), and write the descriptor
-  // BEFORE any dispatch — the `task-plan` worker's first artifact to read.
-  const { taskId, taskDir } = reserveTaskDir(ctx.cwd, resolveTaskId(ctx.cwd, desc));
-  writeTaskDescriptor(taskDir, taskId, desc);
-
-  // Bootstrap the container — mirrors runResearchModelsCommand/runFixCommand/
-  // runAuto exactly.
+/**
+ * Bootstrap the shared session container — mirrors runResearchModelsCommand/
+ * runFixCommand/runAuto exactly. Identical for a fresh mint and a resume, so
+ * both paths share it instead of duplicating the field-by-field setup.
+ */
+function bootstrapTaskSession(
+  ctx: ExtensionCommandContext,
+  session: ForgeAutoSession,
+  milestoneId: string,
+): void {
   session.active = true;
   session.cmdCtx = ctx;
   session.runRootSessionPath = ctx.sessionManager?.getSessionFile?.() ?? null;
@@ -570,16 +647,33 @@ export async function runTaskCommand(
   session.providerReadiness = ctx.modelRegistry
     ? ((provider: string) => ctx.modelRegistry!.isProviderRequestReady(provider))
     : null;
+}
 
-  try {
+/**
+ * Shared plan→execute→review→report pipeline for both the fresh mint and the
+ * resume. `startAtExecute` skips the plan dispatch when the caller has already
+ * verified a substantive `<ID>-PLAN.md` on disk (resume path) — every other
+ * step, including the advisory frontmatter check, the review dialectic, and the
+ * write-back honesty gate, is IDENTICAL to a fresh task. Assumes the container
+ * is already bootstrapped; the caller owns the `finally` restore.
+ */
+async function runTaskPipeline(
+  ctx: ExtensionCommandContext,
+  session: ForgeAutoSession,
+  taskId: string,
+  desc: string,
+  milestoneId: string,
+  options: TaskCommandOptions,
+  startAtExecute: boolean,
+): Promise<void> {
+  const taskPlanPath = join(ctx.cwd, ".gsd", "tasks", taskId, `${taskId}-PLAN.md`);
+
+  if (!startAtExecute) {
     const planResult = await dispatchTaskPlanPhase(ctx, session, taskId, milestoneId);
 
     // Gate: execute dispatches ONLY on a `done` plan result whose PLAN.md
     // actually landed on disk AND is non-trivial (R3 — existence alone is not
     // enough for the artifact that authorizes execute's write access).
-    // Anything else stops here with a pt-BR explanation — no execute
-    // dispatch, no further journaling.
-    const taskPlanPath = join(ctx.cwd, ".gsd", "tasks", taskId, `${taskId}-PLAN.md`);
     const planCheck: { ok: boolean; reason?: string } =
       planResult.status === "done" ? verifyTaskPlan(taskPlanPath) : { ok: false };
     if (!planCheck.ok) {
@@ -590,43 +684,176 @@ export async function runTaskCommand(
       output(ctx, `/forge task ${taskId}: ${reason} — execução não despachada.`, "warning");
       return;
     }
+  }
 
-    // S01 consumption — advisory-only, wrapped so a scoring failure can never
-    // block the execute dispatch (D-S04-1).
-    const advisoryWarning = checkTaskPlanFrontmatterAdvisory(taskPlanPath, taskId);
-    if (advisoryWarning) output(ctx, advisoryWarning, "warning");
+  // S01 consumption — advisory-only, wrapped so a scoring failure can never
+  // block the execute dispatch (D-S04-1).
+  const advisoryWarning = checkTaskPlanFrontmatterAdvisory(taskPlanPath, taskId);
+  if (advisoryWarning) output(ctx, advisoryWarning, "warning");
 
-    const executeResult = await dispatchTaskExecutePhase(ctx, session, taskId, milestoneId);
+  const executeResult = await dispatchTaskExecutePhase(ctx, session, taskId, milestoneId);
 
-    // Review phase (S03-PLAN Interpretation Decision 3): runs on EVERY
-    // completed execute phase, before the verifyTaskSummary early-return, so
-    // a thin/missing SUMMARY can never suppress the review — advisory only,
-    // never mutates executeResult/the reported outcome.
-    await runTaskReviewPhase(ctx, session, taskId, desc, milestoneId, options);
+  // Review phase (S03-PLAN Interpretation Decision 3): runs on EVERY completed
+  // execute phase, before the verifyTaskSummary early-return, so a thin/missing
+  // SUMMARY can never suppress the review — advisory only.
+  await runTaskReviewPhase(ctx, session, taskId, desc, milestoneId, options);
 
-    // Write-back honesty (fix-command R1–R3 posture): a missing/thin SUMMARY
-    // downgrades the reported outcome to a warning naming exactly what's
-    // absent — never reports clean success on unverified work.
-    const summaryCheck = verifyTaskSummary(ctx.cwd, taskId);
-    if (!summaryCheck.ok) {
-      output(
-        ctx,
-        `/forge task ${taskId}: aviso — execução reportou "${executeResult.status}" mas ${summaryCheck.reason} — resultado não confiável.`,
-        "warning",
-      );
-      return;
-    }
-
-    const artifactsSuffix = executeResult.artifacts.length > 0 ? ` (${executeResult.artifacts.join(", ")})` : "";
+  // Write-back honesty (fix-command R1–R3 posture): a missing/thin SUMMARY
+  // downgrades the reported outcome to a warning naming exactly what's absent.
+  const summaryCheck = verifyTaskSummary(ctx.cwd, taskId);
+  if (!summaryCheck.ok) {
     output(
       ctx,
-      `/forge task ${taskId}: ${executeResult.status} — ${executeResult.summary}${artifactsSuffix}`,
-      executeResult.status === "done" ? "info" : "warning",
+      `/forge task ${taskId}: aviso — execução reportou "${executeResult.status}" mas ${summaryCheck.reason} — resultado não confiável.`,
+      "warning",
     );
+    return;
+  }
+
+  const artifactsSuffix = executeResult.artifacts.length > 0 ? ` (${executeResult.artifacts.join(", ")})` : "";
+  output(
+    ctx,
+    `/forge task ${taskId}: ${executeResult.status} — ${executeResult.summary}${artifactsSuffix}`,
+    executeResult.status === "done" ? "info" : "warning",
+  );
+}
+
+/**
+ * `/forge task --list` — enumerate `.gsd/tasks/*` with each entry's OPEN/DONE
+ * state and which artifacts landed. No dispatch, no session bootstrap.
+ */
+function runTaskListSubcommand(ctx: ExtensionCommandContext): void {
+  const entries = listTaskEntries(ctx.cwd);
+  if (entries.length === 0) {
+    output(ctx, "/forge task: nenhuma task em .gsd/tasks/.", "info");
+    return;
+  }
+  const lines = entries.map((e) => {
+    const marks = `${e.hasPlan ? "plan" : "—"}/${e.hasSummary ? "summary" : "—"}`;
+    return `  ${e.status.padEnd(4)}  ${e.id}   [${marks}]`;
+  });
+  const open = entries.filter((e) => e.status === "OPEN").length;
+  output(
+    ctx,
+    `Tasks (${entries.length}, ${open} aberta(s)):\n${lines.join("\n")}\n\nRetomar uma aberta: /forge task --resume <ID>`,
+    "info",
+  );
+}
+
+/**
+ * `/forge task --resume <ID>` — continue an EXISTING task instead of minting a
+ * new id. Resolves the operator's reference to a real directory, recovers the
+ * original request from its descriptor, and enters `runTaskPipeline` at the
+ * first phase whose artifact is missing: straight to execute when a substantive
+ * PLAN.md already exists, otherwise from plan. A task that already has a valid
+ * SUMMARY is reported complete and left untouched.
+ */
+async function runTaskResumeSubcommand(
+  ctx: ExtensionCommandContext,
+  session: ForgeAutoSession,
+  tokens: string[],
+  options: TaskCommandOptions,
+): Promise<void> {
+  const needle = tokens.join(" ").trim().replace(/^["'](.*)["']$/, "$1").trim();
+  if (!needle) {
+    output(ctx, "Uso: /forge task --resume <ID>  (veja os IDs com /forge task --list)", "warning");
+    return;
+  }
+  const resolved = resolveExistingTaskId(ctx.cwd, needle);
+  if (resolved === null) {
+    output(ctx, `/forge task --resume: nenhuma task casou "${needle}". Veja /forge task --list.`, "warning");
+    return;
+  }
+  if ("ambiguous" in resolved) {
+    output(
+      ctx,
+      `/forge task --resume: "${needle}" é ambíguo — casou ${resolved.ambiguous.join(", ")}. Use o ID completo.`,
+      "warning",
+    );
+    return;
+  }
+
+  const taskId = resolved.id;
+  if (verifyTaskSummary(ctx.cwd, taskId).ok) {
+    output(ctx, `/forge task ${taskId}: já concluída (SUMMARY presente) — nada a retomar.`, "info");
+    return;
+  }
+  const planOk = verifyTaskPlan(join(ctx.cwd, ".gsd", "tasks", taskId, `${taskId}-PLAN.md`)).ok;
+  const desc = recoverTaskDesc(ctx.cwd, taskId);
+  const milestoneId = readMilestoneIdBestEffort(ctx.cwd);
+
+  bootstrapTaskSession(ctx, session, milestoneId);
+  output(
+    ctx,
+    `/forge task ${taskId}: retomando a partir de ${planOk ? "execute" : "plan"} (plano ${planOk ? "presente" : "ausente"}).`,
+    "info",
+  );
+  try {
+    await runTaskPipeline(ctx, session, taskId, desc, milestoneId, options, planOk);
+  } finally {
+    await restoreInteractiveSession(session);
+  }
+}
+
+/**
+ * Run `/forge task` — three shapes: `--list` (enumerate), `--resume <ID>`
+ * (continue an existing task), or `"<descrição>"` (mint a fresh one).
+ *
+ * `session` is a test seam (default the process singleton, mirrors
+ * `runResearchModelsCommand`/`runFixCommand`/`runAuto`); `options` (S03/T02)
+ * is a second test seam mirroring `ReviewCommandOptions`, kept as a trailing
+ * 4th parameter so every existing 3-positional-argument call site (11
+ * pre-S03/T02 tests) stays byte-compatible.
+ */
+export async function runTaskCommand(
+  ctx: ExtensionCommandContext,
+  rest: string[],
+  session: ForgeAutoSession = getForgeAutoSession(),
+  options: TaskCommandOptions = {},
+): Promise<void> {
+  const tokens = rest.filter((t) => t.trim().length > 0);
+  const flag = tokens[0]?.toLowerCase();
+
+  // `--list` needs neither the reentrancy guard nor a bootstrap — it only reads.
+  if (flag === "--list" || flag === "-l") {
+    runTaskListSubcommand(ctx);
+    return;
+  }
+
+  // Guard de reentrância — mesmo texto-padrão do runAuto/research-models/fix.
+  // Applies to BOTH resume and fresh dispatch (either bootstraps the loop).
+  if (session.active) {
+    output(ctx, "/forge task: loop já ativo — aguarde a execução atual terminar.", "warning");
+    return;
+  }
+
+  if (flag === "--resume" || flag === "-r") {
+    await runTaskResumeSubcommand(ctx, session, tokens.slice(1), options);
+    return;
+  }
+
+  // Default: mint a fresh task from the description.
+  const desc = tokens.join(" ").trim().replace(/^["'](.*)["']$/, "$1").trim();
+  if (!desc) {
+    output(ctx, `Uso: ${TASK_USAGE}`, "warning");
+    return;
+  }
+
+  const milestoneId = readMilestoneIdBestEffort(ctx.cwd);
+
+  // Mint the ID, atomically reserve its directory (R1 — closes the
+  // same-second/stale-directory collision gap), and write the descriptor
+  // BEFORE any dispatch — the `task-plan` worker's first artifact to read.
+  const { taskId, taskDir } = reserveTaskDir(ctx.cwd, resolveTaskId(ctx.cwd, desc));
+  writeTaskDescriptor(taskDir, taskId, desc);
+
+  bootstrapTaskSession(ctx, session, milestoneId);
+  try {
+    await runTaskPipeline(ctx, session, taskId, desc, milestoneId, options, false);
   } finally {
     // R2 (shared with runAuto/research-models/fix): restore tools/model/
-    // thinkingLevel then s.reset() — every exit path, including a throw,
-    // runs this. Covers BOTH phases — one bootstrap, one restore.
+    // thinkingLevel then s.reset() — every exit path, including a throw, runs
+    // this. One bootstrap, one restore, covering both phases.
     await restoreInteractiveSession(session);
   }
 }

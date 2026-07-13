@@ -1,6 +1,6 @@
 {
   "name": "@glittercowboy/gsd",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "piConfig": {
     "name": "forge",
     "configDir": ".gsd"
