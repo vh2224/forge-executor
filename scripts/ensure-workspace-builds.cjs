@@ -104,8 +104,8 @@ if (require.main === module) {
     'pi-ai',
     'pi-agent-core',
     'pi-coding-agent',
-    'gsd-agent-core',
-    'gsd-agent-modes',
+    'forge-agent-core',
+    'forge-agent-modes',
     'rpc-client',
     'mcp-server',
   ]

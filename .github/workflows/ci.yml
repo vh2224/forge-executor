@@ -1,0 +1,40 @@
+# CI — build reprodutível + suíte da extensão forge em máquina limpa.
+# Existe porque a dívida que ele pega é real: o root build ficou quebrado
+# por dias após a rename @gsd→@forge, mascarado por builds parciais locais
+# (descoberto ao preparar o primeiro release, 2026-07-13).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # versão vem do campo packageManager do package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (root completo — o mesmo que o npm publish embarca)
+        run: pnpm run build
+
+      - name: Compile test workspace
+        run: pnpm run test:compile
+
+      - name: Forge extension suite
+        run: >
+          node --import ./scripts/dist-test-resolve.mjs
+          --experimental-test-isolation=process
+          --test "dist-test/src/resources/extensions/forge/tests/*.test.js"

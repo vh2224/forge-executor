@@ -1,0 +1,49 @@
+# Release — tag v* → build → npm publish (com provenance) → GitHub Release.
+#
+# Setup único (uma vez, pelo dono do repo):
+#   1. npmjs.com → Access Tokens → Generate New Token → tipo "Automation"
+#   2. GitHub repo → Settings → Secrets and variables → Actions →
+#      New repository secret → nome: NPM_TOKEN → colar o token
+#
+# Cortar um release:
+#   git tag v2.0.0 && git push origin v2.0.0
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # criar o GitHub Release
+  id-token: write   # npm provenance (asserção de origem do build)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Publish to npm
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes --title "Forge Executor $GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}

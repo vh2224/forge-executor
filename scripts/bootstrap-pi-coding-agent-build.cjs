@@ -12,7 +12,10 @@ const { execSync } = require('child_process')
 
 const ROOT = join(__dirname, '..')
 const PI_CORE = join(ROOT, 'packages/pi-coding-agent/src/core')
-const AGENT_CORE = join(ROOT, 'packages/gsd-agent-core/src')
+// Renamed @gsd/agent-core -> @forge/agent-core (fork identity); the old path
+// silently broke the whole root build after the rename (dist/loader.js was
+// frozen at the pre-rename build until 2026-07-13).
+const AGENT_CORE = join(ROOT, 'packages/forge-agent-core/src')
 const BACKUP = join(ROOT, '.cache/pi-shim-backup')
 
 const SHIMS = [
