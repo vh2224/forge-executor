@@ -385,7 +385,11 @@ try {
   // Checks every package with `gsd.linkable: true` — not just a hand-picked subset —
   // so any future addition is automatically covered.
   console.log('==> Verifying workspace package resolution (every linkable package)...');
-  const installedRoot = join(installDir, 'node_modules', '@opengsd', 'gsd-pi');
+  // Fork rename: derive the installed path from the ACTUAL package name —
+  // the hardcoded '@opengsd/gsd-pi' made every linkable package look absent
+  // ('forge-executor' installs unscoped) and failed the smoke spuriously.
+  const rootPkgName = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).name;
+  const installedRoot = join(installDir, 'node_modules', ...rootPkgName.split('/'));
   let resolutionFailed = false;
   for (const pkg of getLinkablePackages()) {
     const pkgPath = join(installedRoot, 'node_modules', pkg.scope, pkg.name);
