@@ -1,0 +1,267 @@
+# CI workflow — builds, tests, and gates merges to main
+name: CI
+
+on:
+  push:
+    branches: [main, dev, test, 'hotfix/**']
+    paths-ignore:
+      - '.github/workflows/ai-triage.yml'
+      - '.github/workflows/build-native.yml'
+      - '.github/workflows/cleanup-dev-versions.yml'
+      - 'LICENSE'
+  pull_request:
+    branches: [main, dev, test]
+    paths-ignore:
+      - '.github/workflows/ai-triage.yml'
+      - '.github/workflows/build-native.yml'
+      - '.github/workflows/cleanup-dev-versions.yml'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  # Group per-PR (pull_request.number is globally unique — head_ref is only the
+  # source branch name, which collides across forks/PRs that share it) so pushing
+  # to a PR cancels its own stale run, and fall back to the unique run_id on
+  # branch pushes so an in-flight main/dev CI is never cancelled by a later push.
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # Single checkout + classify + fast scans (~2–5 min). Replaces detect-changes,
+  # docs-check, and lint jobs so build can start as soon as this finishes.
+  fast-gates:
+    name: fast-gates
+    timeout-minutes: 15
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    outputs:
+      # Windows/Docker/web path-specific signal (web-changed, portability-changed,
+      # windows-e2e-changed, docker-changed) intentionally dropped for the fork —
+      # native builds are off (GSD_NATIVE_DISABLE=1, D8) and no lean-ci job
+      # conditions on them. See scripts/ci-classify-changes.sh.
+      heavy-code-changed: ${{ steps.classify.outputs.heavy-code-changed }}
+    steps:
+      - name: Checkout repository without GITHUB_TOKEN
+        shell: bash
+        env:
+          FETCH_DEPTH: '0'
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          git -c protocol.version=2 fetch --no-tags --prune origin \
+            '+refs/heads/*:refs/remotes/origin/*' \
+            '+refs/tags/*:refs/tags/*' \
+            "+${GITHUB_SHA}:refs/checkout-ref"
+          git checkout --force --detach "$GITHUB_SHA"
+
+      - name: Prepare diff base for scans
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci-fetch-diff-base.sh
+
+      - name: Classify changed files
+        id: classify
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: bash scripts/ci-classify-changes.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 10.12.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          GSD_SKIP_RTK_INSTALL: '1'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run fast gates
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci-fast-gates.sh
+
+  build:
+    name: build
+    timeout-minutes: 45
+    needs: [fast-gates]
+    if: needs.fast-gates.outputs.heavy-code-changed == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout repository without GITHUB_TOKEN
+        shell: bash
+        env:
+          FETCH_DEPTH: '1'
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          git -c protocol.version=2 fetch --no-tags --prune --depth="$FETCH_DEPTH" origin \
+            "+${GITHUB_SHA}:refs/checkout-ref"
+          git checkout --force --detach "$GITHUB_SHA"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 10.12.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - uses: ./.github/actions/setup-linux-native-build-deps
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          GSD_SKIP_RTK_INSTALL: '1'
+          GSD_SKIP_DEP_REPAIR: '1'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build core (runnable binary)
+        env:
+          GSD_NATIVE_DISABLE: '1'
+        run: pnpm run build:core
+
+      - name: Strip-gate typecheck
+        run: npx tsc -p tsconfig.strip-gate.json --noEmit
+
+      - name: Typecheck extensions
+        run: pnpm run typecheck:extensions
+
+      - name: Verify pi patch integrity
+        run: node scripts/verify-pi-patches.cjs
+
+      - name: Verify no imports to deleted trees
+        run: pnpm run verify:no-deleted-imports
+
+      - name: Run test:ci (extended gate + fake smoke)
+        run: |
+          chmod +x dist/loader.js
+          export GSD_SMOKE_BINARY="$(pwd)/dist/loader.js"
+          pnpm run test:ci
+
+      - name: Pack build artifacts
+        run: bash scripts/ci-pack-build-artifacts.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-build-artifacts
+          path: ci-build-artifacts.tar.gz
+          retention-days: 1
+
+  # Validate the declared engines floor (package.json engines.node ">=22.0.0").
+  # The main build/test lanes run on Node 24, so without this lane the supported
+  # minor (22.x) is never exercised. Cheap: reuse the build artifacts and just run
+  # the smoke suite against the built binary on Node 22.
+  node22-smoke:
+    name: node22-smoke
+    timeout-minutes: 15
+    needs: [fast-gates, build]
+    if: needs.fast-gates.outputs.heavy-code-changed == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository without GITHUB_TOKEN
+        shell: bash
+        env:
+          FETCH_DEPTH: '1'
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          git -c protocol.version=2 fetch --no-tags --prune --depth="$FETCH_DEPTH" origin \
+            "+${GITHUB_SHA}:refs/checkout-ref"
+          git checkout --force --detach "$GITHUB_SHA"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 10.12.1
+
+      - name: Setup Node.js 22 (engines floor)
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          GSD_SKIP_RTK_INSTALL: '1'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - uses: ./.github/actions/restore-ci-build-artifacts
+
+      - name: Run smoke suite on Node 22
+        shell: bash
+        run: |
+          chmod +x dist/loader.js
+          export GSD_SMOKE_BINARY="$(pwd)/dist/loader.js"
+          pnpm run test:smoke
+
+  # Single aggregate gate. Make THIS the only required status check in branch
+  # protection. Because it always runs, branch protection always has a concrete
+  # pass/fail signal — a conditionally-skipped `build`/`node22-smoke` job
+  # can no longer read as a neutral "required check never reported" state.
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs: [fast-gates, build, node22-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert no upstream job failed or was cancelled
+        env:
+          FAST_GATES: ${{ needs.fast-gates.result }}
+          BUILD: ${{ needs.build.result }}
+          NODE22: ${{ needs.node22-smoke.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "fast-gates=$FAST_GATES build=$BUILD node22-smoke=$NODE22"
+          # 'skipped' is an acceptable result (job legitimately not needed).
+          # Only 'failure' / 'cancelled' must block the merge.
+          status=0
+          for result in "$FAST_GATES" "$BUILD" "$NODE22"; do
+            case "$result" in
+              success|skipped) ;;
+              *) status=1 ;;
+            esac
+          done
+          if [ "$status" -ne 0 ]; then
+            echo "::error title=CI gate failed::One or more required CI jobs failed or were cancelled."
+            exit 1
+          fi
+          echo "All required CI jobs passed (or were legitimately skipped)."

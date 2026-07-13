@@ -1,0 +1,29 @@
+# [FORGE2] disabled for fork — ver docs/forge/FORGE2-M0-WORKFLOW-TRIAGE.md
+name: Release Discord changelog
+
+on: { workflow_dispatch: {} }
+permissions:
+  contents: read
+
+jobs:
+  discord-changelog:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Post release changelog to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${RELEASE_TAG}" ]; then
+            node scripts/release-discord-summary.cjs --tag "${RELEASE_TAG}" --post
+          else
+            node scripts/release-discord-summary.cjs --latest --post
+          fi

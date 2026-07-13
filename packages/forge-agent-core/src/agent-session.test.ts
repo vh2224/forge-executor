@@ -1,0 +1,336 @@
+import { describe, test } from "node:test";
+import assert from "node:assert/strict";
+import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import { resolvePath } from "@gsd/pi-coding-agent/utils/paths.js";
+import { parseSkillBlock } from "./agent-session.ts";
+import { AgentSessionExtensionsModule } from "./session/agent-session-extensions.ts";
+import { AgentSessionNavigationModule } from "./session/agent-session-navigation.ts";
+import { AgentSessionPromptModule } from "./session/agent-session-prompt.ts";
+
+describe("parseSkillBlock", () => {
+  test("parses a valid skill block with trailing user message", () => {
+    const text = `<skill name="review" location=".gsd/skills/review.md">
+Follow the checklist.
+</skill>
+
+Please review the patch.`;
+
+    const parsed = parseSkillBlock(text);
+    assert.ok(parsed);
+    assert.equal(parsed.name, "review");
+    assert.equal(parsed.location, ".gsd/skills/review.md");
+    assert.match(parsed.content, /checklist/);
+    assert.equal(parsed.userMessage, "Please review the patch.");
+  });
+
+  test("returns null for malformed skill blocks", () => {
+    assert.equal(parseSkillBlock("not a skill"), null);
+    assert.equal(parseSkillBlock('<skill name="x" location="y">missing close'), null);
+  });
+});
+
+describe("AgentSessionExtensionsModule", () => {
+  test("bindExtensions forwards extension UI context into provider stream options", async () => {
+    const uiContext = { notify: () => {} };
+    let received: Record<string, unknown> | undefined;
+    const host = {
+      _extensionUIContext: undefined as typeof uiContext | undefined,
+      _extensionRunner: {
+        setUIContext: () => {},
+        bindCommandContext: () => {},
+        onError: () => () => {},
+        emit: async () => {},
+        hasHandlers: () => false,
+      },
+      _sessionStartEvent: { type: "session_start", reason: "startup" },
+      agent: {
+        streamFn: (_model: unknown, _context: unknown, options?: Record<string, unknown>) => {
+          received = options;
+          return { type: "stream" } as any;
+        },
+      },
+    };
+
+    const mod = new AgentSessionExtensionsModule(host as any);
+    await mod.bindExtensions({ uiContext: uiContext as any });
+
+    host.agent.streamFn({}, {}, { maxTokens: 1 });
+    assert.equal(received?.extensionUIContext, uiContext);
+  });
+
+  test("matches visible skills case-insensitively when rebuilding the prompt", () => {
+    const host = {
+      _cwd: "/tmp/project",
+      _toolRegistry: new Map([["read", {}]]),
+      _toolPromptSnippets: new Map(),
+      _toolPromptGuidelines: new Map(),
+      _visibleSkillNames: ["review-skill"],
+      resourceLoader: {
+        getSystemPrompt: () => undefined,
+        getAppendSystemPrompt: () => [],
+        getSkills: () => ({
+          skills: [
+            makeSkill("Review-Skill"),
+            makeSkill("other-skill"),
+          ],
+        }),
+        getAgentsFiles: () => ({ agentsFiles: [] }),
+      },
+    };
+
+    const prompt = new AgentSessionExtensionsModule(host as any).rebuildSystemPrompt(["read"]);
+
+    assert.match(prompt, /<name>Review-Skill<\/name>/);
+    assert.doesNotMatch(prompt, /<name>other-skill<\/name>/);
+  });
+});
+
+describe("AgentSessionNavigationModule", () => {
+  test("records workspaceRoot as the new session header cwd", async () => {
+    // Canonicalize with the same resolver the session code uses so the
+    // expected cwd matches on Windows too (a bare POSIX path like
+    // "/tmp/..." resolves to "C:\\tmp\\..." there). No-op on POSIX.
+    const projectRoot = resolvePath("/tmp/project-root");
+    const worktreeRoot = resolvePath("/tmp/project-root/.gsd-worktrees/M001");
+    const sessionManager = SessionManager.inMemory(projectRoot);
+    let rebuiltRuntime = false;
+
+    const host = {
+      sessionFile: undefined,
+      _extensionRunner: undefined,
+      _cwd: projectRoot,
+      _steeringMessages: ["old"],
+      _followUpMessages: ["old"],
+      _pendingNextTurnMessages: ["old"],
+      thinkingLevel: "off",
+      agent: {
+        state: { isStreaming: false },
+        sessionId: sessionManager.getSessionId(),
+        waitForIdle: async () => {},
+        reset: () => {},
+      },
+      sessionManager,
+      abortRetry: () => {},
+      abort: async () => {},
+      disconnectFromAgent: () => {},
+      reconnectToAgent: () => {},
+      getActiveToolNames: () => [],
+      buildRuntime: () => {
+        rebuiltRuntime = true;
+      },
+      refreshToolRegistry: () => {},
+      emitSessionStartWithLegacySwitch: async () => {},
+    };
+
+    const result = await new AgentSessionNavigationModule(host as any).newSession({
+      workspaceRoot: worktreeRoot,
+    });
+
+    assert.equal(result, true);
+    assert.equal(host._cwd, worktreeRoot);
+    assert.equal(sessionManager.getHeader()?.cwd, worktreeRoot);
+    assert.equal(sessionManager.getCwd(), worktreeRoot);
+    assert.equal(rebuiltRuntime, true);
+  });
+
+  test("invokes options.withSession exactly once with the ReplacedSessionContext, after session_start", async () => {
+    const projectRoot = resolvePath("/tmp/project-root-ws");
+    const sessionManager = SessionManager.inMemory(projectRoot);
+    const sentinelCtx = { __sentinel: "replaced-session-context" };
+
+    const order: string[] = [];
+    const host = {
+      sessionFile: undefined,
+      _extensionRunner: { hasHandlers: () => false },
+      _cwd: projectRoot,
+      _steeringMessages: [],
+      _followUpMessages: [],
+      _pendingNextTurnMessages: [],
+      thinkingLevel: "off",
+      agent: {
+        state: { isStreaming: false },
+        sessionId: sessionManager.getSessionId(),
+        waitForIdle: async () => {},
+        reset: () => {},
+      },
+      sessionManager,
+      abortRetry: () => {},
+      abort: async () => {},
+      disconnectFromAgent: () => {},
+      reconnectToAgent: () => {},
+      getActiveToolNames: () => [],
+      buildRuntime: () => {},
+      refreshToolRegistry: () => {},
+      emitSessionStartWithLegacySwitch: async () => {
+        order.push("session_start");
+      },
+      createReplacedSessionContext: () => sentinelCtx,
+    };
+
+    const received: unknown[] = [];
+    const result = await new AgentSessionNavigationModule(host as any).newSession({
+      withSession: async (ctx) => {
+        order.push("withSession");
+        received.push(ctx);
+      },
+    });
+
+    assert.equal(result, true);
+    assert.equal(received.length, 1);
+    assert.strictEqual(received[0], sentinelCtx);
+    assert.deepEqual(order, ["session_start", "withSession"]);
+  });
+
+  // S04-R2: a withSession callback that rejects must NOT turn a completed
+  // replacement into a rejection — newSession still resolves true and the fresh
+  // session stays mounted/usable.
+  test("newSession resolves true when withSession throws (replacement already completed)", async () => {
+    const projectRoot = resolvePath("/tmp/project-root-throw");
+    const sessionManager = SessionManager.inMemory(projectRoot);
+    const sentinelCtx = { __sentinel: "replaced-session-context" };
+
+    const order: string[] = [];
+    let reconnected = false;
+    const host = {
+      sessionFile: undefined,
+      _extensionRunner: { hasHandlers: () => false },
+      _cwd: projectRoot,
+      _steeringMessages: [],
+      _followUpMessages: [],
+      _pendingNextTurnMessages: [],
+      thinkingLevel: "off",
+      agent: {
+        state: { isStreaming: false },
+        sessionId: sessionManager.getSessionId(),
+        waitForIdle: async () => {},
+        reset: () => {},
+      },
+      sessionManager,
+      abortRetry: () => {},
+      abort: async () => {},
+      disconnectFromAgent: () => {},
+      reconnectToAgent: () => {
+        reconnected = true;
+      },
+      getActiveToolNames: () => [],
+      buildRuntime: () => {},
+      refreshToolRegistry: () => {},
+      emitSessionStartWithLegacySwitch: async () => {
+        order.push("session_start");
+      },
+      createReplacedSessionContext: () => sentinelCtx,
+    };
+
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (msg?: unknown) => {
+      warnings.push(String(msg));
+    };
+    let result: boolean;
+    try {
+      result = await new AgentSessionNavigationModule(host as any).newSession({
+        withSession: async () => {
+          order.push("withSession");
+          throw new Error("boom from withSession");
+        },
+      });
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    // Resolves true (no rejection) despite the callback throwing.
+    assert.equal(result, true);
+    // Replacement observably completed: session_start ran, reconnect happened,
+    // and the callback was reached before it threw.
+    assert.deepEqual(order, ["session_start", "withSession"]);
+    assert.equal(reconnected, true);
+    // A best-effort warning was logged about the swallowed error.
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /withSession callback threw/);
+    assert.match(warnings[0], /boom from withSession/);
+  });
+});
+
+describe("AgentSessionPromptModule", () => {
+  test("keeps no-progress terminal fingerprint across other retryable errors", async () => {
+    const userMessage = {
+      role: "user",
+      content: [{ type: "text", text: "do the work" }],
+      timestamp: 1,
+    };
+    const events: Array<{ type: string }> = [];
+    const host = {
+      _retryAttempt: 0,
+      _retryAbortController: undefined,
+      settingsManager: {
+        getRetrySettings: () => ({
+          enabled: true,
+          maxRetries: 5,
+          baseDelayMs: 0,
+        }),
+      },
+      emit: (event: { type: string }) => {
+        events.push(event);
+      },
+      agent: {
+        state: {
+          messages: [] as any[],
+        },
+      },
+    };
+    const mod = new AgentSessionPromptModule(host as any);
+
+    const firstTerminalFailure = makeAssistantError("terminated before any output");
+    host.agent.state.messages = [userMessage, firstTerminalFailure];
+    assert.equal(await mod.prepareRetry(firstTerminalFailure as any), true);
+
+    const unrelatedRetryableFailure = makeAssistantError("overloaded_error: provider is busy");
+    host.agent.state.messages = [userMessage, unrelatedRetryableFailure];
+    assert.equal(await mod.prepareRetry(unrelatedRetryableFailure as any), true);
+
+    const repeatedTerminalFailure = makeAssistantError("terminated before any output");
+    host.agent.state.messages = [userMessage, repeatedTerminalFailure];
+    assert.equal(mod.canPrepareRetry(repeatedTerminalFailure as any), false);
+    assert.equal(await mod.prepareRetry(repeatedTerminalFailure as any), false);
+    assert.equal(host._retryAttempt, 2);
+    assert.equal(events.filter((event) => event.type === "auto_retry_start").length, 2);
+  });
+});
+
+function makeSkill(name: string) {
+  return {
+    name,
+    description: `${name} description`,
+    filePath: `/skills/${name}/SKILL.md`,
+    baseDir: `/skills/${name}`,
+    sourceInfo: { kind: "test" },
+    source: "test",
+    disableModelInvocation: false,
+  };
+}
+
+function makeAssistantError(errorMessage: string) {
+  return {
+    role: "assistant",
+    content: [],
+    api: "test",
+    provider: "test",
+    model: "test-model",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+      },
+    },
+    stopReason: "error",
+    errorMessage,
+    timestamp: 1,
+  };
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@opengsd/engine-darwin-arm64",
+  "version": "1.8.1",
+  "description": "GSD native engine binary for macOS ARM64",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "gsd_engine.node",
+  "files": [
+    "gsd_engine.node"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/open-gsd/gsd-pi.git"
+  },
+  "publishConfig": {
+    "provenance": true
+  }
+}

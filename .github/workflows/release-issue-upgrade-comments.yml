@@ -1,0 +1,35 @@
+# [FORGE2] disabled for fork — ver docs/forge/FORGE2-M0-WORKFLOW-TRIAGE.md
+# Project/App: gsd-pi
+# File Purpose: Ask open issue reporters to re-check issues after each stable release.
+
+name: Release Issue Upgrade Comments
+
+on: { workflow_dispatch: {} }
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: release-issue-upgrade-comments-${{ github.event.release.tag_name || inputs.release_tag || 'latest' }}
+  cancel-in-progress: false
+
+jobs:
+  post-upgrade-comments:
+    name: Post upgrade check comments
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout base
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Comment on open issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: node scripts/release-issue-upgrade-comments.mjs

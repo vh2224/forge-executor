@@ -1,0 +1,49 @@
+---
+title: "Web interface"
+description: "Browser-based project management with real-time progress and multi-project support."
+---
+
+GSD includes a browser-based web interface for project management, real-time progress monitoring, and multi-project support.
+
+## Quick start
+
+```bash
+gsd --web
+```
+
+### CLI flags
+
+```bash
+gsd --web --host 0.0.0.0 --port 8080 --allowed-origins "https://example.com"
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host` | `127.0.0.1` | Bind address |
+| `--port` | `3000` | Port |
+| `--allowed-origins` | (none) | Comma-separated CORS origins |
+| `--no-auth` | disabled | Disable the built-in bearer token gate |
+
+`--no-auth` leaves the web interface unprotected unless another layer controls access. By default, GSD only allows unauthenticated web mode on loopback hosts such as `127.0.0.1`, `localhost`, `::1`, or another `127.x.x.x` address. If you combine `--no-auth` or `GSD_WEB_NO_AUTH=1` with a non-loopback bind such as `--host 0.0.0.0`, startup is refused.
+
+To deliberately run unauthenticated web mode on a LAN-facing host, set `GSD_WEB_ALLOW_UNAUTHENTICATED_LAN=1` in the same environment:
+
+```bash
+GSD_WEB_ALLOW_UNAUTHENTICATED_LAN=1 gsd --web --host 0.0.0.0 --no-auth
+```
+
+This exposes terminal and file APIs to any client that can reach the server unless trusted external access control is already in place. Use the override only behind authentication you control, such as a reverse proxy, VPN, or private network boundary. Headless launches can set `GSD_WEB_NO_AUTH=1`.
+
+## Features
+
+- **Project management** — view milestones, slices, and tasks in a visual dashboard
+- **Real-time progress** — server-sent events push status updates during auto-mode
+- **Multi-project support** — manage multiple projects from a single tab via `?project=` URL parameter
+- **Change project root** — switch directories from the web UI without restarting
+- **Onboarding flow** — API key setup and provider configuration through the browser
+- **Model selection** — switch models and providers from the web UI
+
+## Platform notes
+
+- **macOS/Linux** — full support
+- **Windows** — web build is skipped due to Next.js webpack issues. The CLI remains fully functional.

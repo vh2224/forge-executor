@@ -1,0 +1,11 @@
+{
+  "id": "forge",
+  "name": "Forge",
+  "version": "0.1.0",
+  "description": "Forge methodology loop — /forge status|help|auto|next",
+  "tier": "core",
+  "requires": { "platform": ">=2.29.0" },
+  "provides": {
+    "commands": ["forge"]
+  }
+}

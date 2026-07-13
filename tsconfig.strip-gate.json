@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "exclude": [
+    "src/resources/extensions",
+    "src/resources/skills",
+    "src/resources/agents",
+    "src/tests"
+  ]
+}

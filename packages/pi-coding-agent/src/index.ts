@@ -1,0 +1,298 @@
+// Config paths
+export { getAgentDir, VERSION, APP_NAME } from "./config.js";
+// Auth and model registry
+export {
+	type ApiKeyCredential,
+	type AuthCredential,
+	type AuthStatus,
+	AuthStorage,
+	type AuthStorageBackend,
+	FileAuthStorageBackend,
+	InMemoryAuthStorageBackend,
+	type OAuthCredential,
+} from "./core/auth-storage.js";
+export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
+// Extension system
+export type {
+	AgentEndEvent,
+	AgentStartEvent,
+	AgentToolResult,
+	AgentToolUpdateCallback,
+	AppKeybinding,
+	AutocompleteProviderFactory,
+	BashToolCallEvent,
+	BeforeAgentStartEvent,
+	BeforeAgentStartEventResult,
+	BeforeProviderRequestEvent,
+	BeforeProviderRequestEventResult,
+	BeforeCommitEventResult,
+	BeforePrEventResult,
+	BeforePushEventResult,
+	BeforeVerifyEventResult,
+	BudgetThresholdEventResult,
+	VerifyFailure,
+	BuildSystemPromptOptions,
+	CompactOptions,
+	ContextEvent,
+	ContextUsage,
+	CustomToolCallEvent,
+	EditToolCallEvent,
+	ExecOptions,
+	ExecResult,
+	Extension,
+	ExtensionActions,
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionCommandContextActions,
+	ExtensionContext,
+	ExtensionContextActions,
+	ExtensionError,
+	ExtensionEvent,
+	ExtensionFactory,
+	ExtensionFlag,
+	ExtensionHandler,
+	ExtensionRuntime,
+	ExtensionShortcut,
+	ExtensionUIContext,
+	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
+	FindToolCallEvent,
+	GrepToolCallEvent,
+	GsdProgressState,
+	GsdProgressWidgetMode,
+	InputEvent,
+	InputEventResult,
+	InputSource,
+	KeybindingsManager,
+	LoadExtensionsResult,
+	LsToolCallEvent,
+	MessageRenderer,
+	MessageRenderOptions,
+	ProviderConfig,
+	ProviderModelConfig,
+	ReadToolCallEvent,
+	RegisteredCommand,
+	RegisteredTool,
+	ResolvedCommand,
+	SessionBeforeCompactEvent,
+	SessionBeforeForkEvent,
+	SessionBeforeSwitchEvent,
+	SessionBeforeTreeEvent,
+	SessionCompactEvent,
+	SessionShutdownEvent,
+	SessionStartEvent,
+	SessionTreeEvent,
+	SlashCommandInfo,
+	SlashCommandSource,
+	SourceInfo,
+	TerminalInputHandler,
+	ToolCallEvent,
+	ToolCallEventResult,
+	ToolDefinition,
+	ToolCompatibility,
+	ToolExecutionMode,
+	ToolInfo,
+	ToolRenderResultOptions,
+	ToolResultEvent,
+	TurnEndEvent,
+	TurnStartEvent,
+	UserBashEvent,
+	UserBashEventResult,
+	WidgetPlacement,
+	WorkingIndicatorOptions,
+	WriteToolCallEvent,
+} from "./core/extensions/index.js";
+export {
+	createExtensionRuntime,
+	defineTool,
+	discoverAndLoadExtensions,
+	ExtensionRunner,
+	importExtensionModule,
+	isBashToolResult,
+	isEditToolResult,
+	isFindToolResult,
+	isGrepToolResult,
+	isLsToolResult,
+	isReadToolResult,
+	isToolCallEventType,
+	isWriteToolResult,
+	wrapRegisteredTool,
+	wrapRegisteredTools,
+} from "./core/extensions/index.js";
+// Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
+export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
+export { convertToLlm } from "./core/messages.js";
+export { ModelRegistry } from "./core/model-registry.js";
+export type {
+	PackageManager,
+	PathMetadata,
+	ProgressCallback,
+	ProgressEvent,
+	ResolvedPaths,
+	ResolvedResource,
+} from "./core/package-manager.js";
+export { DefaultPackageManager } from "./core/package-manager.js";
+export type { PackageCommand, PackageCommandOptions, PackageCommandRunnerOptions, PackageCommandRunnerResult } from "./core/package-commands.js";
+export { getPackageCommandUsage, parsePackageCommand, runPackageCommand } from "./core/package-commands.js";
+export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
+export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
+export {
+	type BranchSummaryEntry,
+	buildSessionContext,
+	type CompactionEntry,
+	CURRENT_SESSION_VERSION,
+	type CustomEntry,
+	type CustomMessageEntry,
+	type FileEntry,
+	getLatestCompactionEntry,
+	type ModelChangeEntry,
+	migrateSessionEntries,
+	type NewSessionOptions,
+	parseSessionEntries,
+	type SessionContext,
+	type SessionEntry,
+	type SessionEntryBase,
+	type SessionHeader,
+	type SessionInfo,
+	type SessionInfoEntry,
+	SessionManager,
+	type SessionMessageEntry,
+	type ThinkingLevelChangeEntry,
+} from "./core/session-manager.js";
+export {
+	type CompactionSettings,
+	type ImageSettings,
+	type PackageSource,
+	type RetrySettings,
+	SettingsManager,
+} from "./core/settings-manager.js";
+// Skills
+export {
+	formatSkillsForPrompt,
+	getLoadedSkills,
+	type LoadSkillsFromDirOptions,
+	type LoadSkillsResult,
+	loadSkills,
+	loadSkillsFromDir,
+	type Skill,
+	type SkillFrontmatter,
+} from "./core/skills.js";
+export {
+	collectAncestorAgentsSkillDirs,
+	findGitRepoRoot,
+	getSkillDirectories,
+	type GetSkillDirectoriesOptions,
+	type SkillDirectoryEntry,
+	type SkillDirKind,
+} from "./core/skill-directories.js";
+export { createSyntheticSourceInfo } from "./core/source-info.js";
+// Tools
+export {
+	type BashOperations,
+	type BashSpawnContext,
+	type BashSpawnHook,
+	type BashToolDetails,
+	type BashToolInput,
+	type BashToolOptions,
+	createBashTool,
+	createBashToolDefinition,
+	createEditTool,
+	createEditToolDefinition,
+	createFindToolDefinition,
+	createGrepToolDefinition,
+	createLocalBashOperations,
+	createLsTool,
+	createLsToolDefinition,
+	createReadTool,
+	createReadToolDefinition,
+	createWriteTool,
+	createWriteToolDefinition,
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	type EditOperations,
+	type EditToolDetails,
+	type EditToolInput,
+	type EditToolOptions,
+	type FindOperations,
+	type FindToolDetails,
+	type FindToolInput,
+	type FindToolOptions,
+	formatSize,
+	type GrepOperations,
+	type GrepToolDetails,
+	type GrepToolInput,
+	type GrepToolOptions,
+	type LsOperations,
+	type LsToolDetails,
+	type LsToolInput,
+	type LsToolOptions,
+	type ReadOperations,
+	type ReadToolDetails,
+	type ReadToolInput,
+	type ReadToolOptions,
+	type ToolsOptions,
+	type TruncationOptions,
+	type TruncationResult,
+	truncateHead,
+	truncateLine,
+	truncateTail,
+	type WriteOperations,
+	type WriteToolInput,
+	type WriteToolOptions,
+	withFileMutationQueue,
+} from "./core/tools/index.js";
+export {
+	getAllToolCompatibility,
+	getToolCompatibility,
+	registerMcpToolCompatibility,
+	registerToolCompatibility,
+	resetToolCompatibilityRegistry,
+} from "./core/tools/tool-compatibility-registry.js";
+// Theme utilities for custom tools and extensions
+export {
+	getLanguageFromPath,
+	getMarkdownTheme,
+	getSelectListTheme,
+	getSettingsListTheme,
+	highlightCode,
+	initTheme,
+	Theme,
+	type ThemeColor,
+} from "./theme/theme.js";
+// Clipboard utilities
+export { copyToClipboard } from "./utils/clipboard.js";
+export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
+export { formatDimensionNote, type ResizedImage, resizeImage } from "./utils/image-resize.js";
+// Shell utilities
+export {
+	getShellConfig,
+	sanitizeCommand,
+	killProcessTree,
+	SIGKILL_GRACE_MS,
+	HARD_DEADLINE_MS,
+} from "./utils/shell.js";
+export {
+	SAFE_COMMAND_PREFIXES,
+	getAllowedCommandPrefixes,
+	setAllowedCommandPrefixes,
+} from "./core/resolve-config-value.js";
+
+// GSD-specific exports (protected during upstream vendoring)
+export { FallbackResolver } from "./core/fallback-resolver.js";
+export {
+	prepareLifecycleHooks,
+	runLifecycleHooks,
+	readManifestRuntimeDeps,
+	collectRuntimeDependencies,
+	verifyRuntimeDependencies,
+	resolveLocalSourcePath,
+} from "./core/lifecycle-hooks.js";
+export {
+	BlobStore,
+	externalizeImageData,
+	isBlobRef,
+	parseBlobRef,
+	resolveImageData,
+} from "./core/blob-store.js";
+export { ArtifactManager } from "./core/artifact-manager.js";
+export { toPosixPath } from "./utils/path-display.js";

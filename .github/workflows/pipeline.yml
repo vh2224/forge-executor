@@ -1,0 +1,60 @@
+# [FORGE2] disabled for fork — ver docs/forge/FORGE2-M0-WORKFLOW-TRIAGE.md
+# Open GSD - CI builder image pipeline
+# File Purpose: Bootstrap and refresh the GHCR CI builder image used by publish workflows.
+
+name: Pipeline
+
+# Rebuilds the CI builder Docker image when its build inputs change on main.
+# npm publishing lives in one trusted manual workflow (npm-publish.yml).
+
+on: { workflow_dispatch: {} }
+concurrency:
+  group: pipeline-builder
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  update-builder:
+    name: Update CI Builder Image
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main') }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Check for builder image changes
+        id: check
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "${HEAD_SHA}~1" "${HEAD_SHA}" -- Dockerfile package.json .github/workflows/pipeline.yml || echo "")
+          echo "changed=$([[ -n "$CHANGED" ]] && echo 'true' || echo 'false')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: steps.check.outputs.changed == 'true'
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push CI builder image
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          docker build --target builder \
+            -t ghcr.io/open-gsd/gsd-ci-builder:latest \
+            .
+          docker push ghcr.io/open-gsd/gsd-ci-builder:latest

@@ -1,0 +1,8 @@
+tree 2d5b54a2b02e3f0d4c694c153c518111fda9e5a1
+parent 2db6bdaffb726da2122692e3be110d5b06b76849
+author Vinicius Almeida <49735527+vh2224@users.noreply.github.com> 1783663652 -0300
+committer Vinicius Almeida <49735527+vh2224@users.noreply.github.com> 1783952369 -0300
+
+feat(S04/T01): plan-checker nativo (10 dimensões, advisory, in-process)
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
