@@ -138,7 +138,8 @@ try {
   const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
   function isInternalWorkspaceDep(dep) {
-    return dep.startsWith('@gsd/') || dep.startsWith('@opengsd/') || dep.startsWith('@earendil-works/');
+    // @forge/* added post-rename (Forge Executor): bundled workspace scope.
+    return dep.startsWith('@gsd/') || dep.startsWith('@forge/') || dep.startsWith('@opengsd/') || dep.startsWith('@earendil-works/');
   }
 
   // --- Guard: no `workspace:` protocol in the published dependency fields ---
