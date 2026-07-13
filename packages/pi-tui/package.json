@@ -1,0 +1,34 @@
+{
+  "name": "@gsd/pi-tui",
+  "version": "1.8.1",
+  "description": "Terminal UI library (vendored from earendil-works/pi)",
+  "type": "module",
+  "gsd": {
+    "linkable": true,
+    "scope": "@gsd",
+    "name": "pi-tui"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/clean-package-dist.cjs && tsc -p tsconfig.json --incremental false"
+  },
+  "dependencies": {
+    "@gsd/native": "workspace:*",
+    "get-east-asian-width": "1.6.0",
+    "marked": "15.0.12",
+    "@sinclair/typebox": "^0.34.41"
+  },
+  "devDependencies": {
+    "@xterm/headless": "5.5.0",
+    "@xterm/xterm": "5.5.0",
+    "chalk": "5.6.2"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "@forge/agent-modes",
+  "version": "1.8.1",
+  "description": "GSD run modes and CLI layer",
+  "type": "module",
+  "gsd": {
+    "linkable": true,
+    "scope": "@forge",
+    "name": "agent-modes"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/clean-package-dist.cjs && tsc -p tsconfig.json --incremental false",
+    "test": "node --import ./scripts/resolve-ts.mjs --experimental-strip-types --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@forge/agent-core": "workspace:*",
+    "@gsd/pi-agent-core": "workspace:*",
+    "@gsd/pi-ai": "workspace:*",
+    "@gsd/pi-coding-agent": "workspace:*",
+    "@gsd/pi-tui": "workspace:*",
+    "@opengsd/contracts": "workspace:*",
+    "chalk": "^5.5.0"
+  }
+}

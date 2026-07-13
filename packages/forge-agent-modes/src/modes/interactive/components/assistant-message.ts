@@ -1,0 +1,215 @@
+// Project/App: gsd-pi
+// File Purpose: Assistant message rail renderer for interactive terminal sessions.
+import type { AssistantMessage } from "@gsd/pi-ai";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@gsd/pi-tui";
+import { getMarkdownTheme, theme } from "@gsd/pi-coding-agent/theme/theme.js";
+import { type TimestampFormat } from "./timestamp.js";
+import { formatTimestamp } from "./timestamp.js";
+import { RenderCache } from "./render-cache.js";
+import { renderPlainSpeakerMessage } from "./transcript-design.js";
+import { asServerToolUse, asWebSearchResult, isToolContentBlock } from "../gsd-content-blocks.js";
+
+export interface ContentRange {
+	startIndex: number;
+	endIndex: number;
+}
+
+/**
+ * Component that renders a complete assistant message, or a sub-range of its content[].
+ * When `range` is provided, only content[startIndex..endIndex] (inclusive) is rendered.
+ * Non-text/thinking blocks within the range are silently skipped.
+ */
+export class AssistantMessageComponent extends Container {
+	private contentContainer: Container;
+	private hideThinkingBlock: boolean;
+	private markdownTheme: MarkdownTheme;
+	private lastMessage?: AssistantMessage;
+	private timestampFormat: TimestampFormat;
+	private range?: ContentRange;
+	private showMetadata: boolean;
+	private renderCache = new RenderCache();
+	private renderVersion = 0;
+
+	constructor(
+		message?: AssistantMessage,
+		hideThinkingBlock = true,
+		markdownTheme: MarkdownTheme = getMarkdownTheme(),
+		timestampFormat: TimestampFormat = "date-time-iso",
+		range?: ContentRange,
+	) {
+		super();
+
+		this.hideThinkingBlock = hideThinkingBlock;
+		this.markdownTheme = markdownTheme;
+		this.timestampFormat = timestampFormat;
+		this.range = range;
+		// No range = legacy full-message rendering; show metadata by default.
+		// Ranged (interleaved) instances start with metadata hidden; chat-controller
+		// calls setShowMetadata(true) on the last segment at message_end.
+		this.showMetadata = !range;
+
+		// Container for text/thinking content
+		this.contentContainer = new Container();
+		this.addChild(this.contentContainer);
+
+		if (message) {
+			this.updateContent(message);
+		}
+	}
+
+	setRange(range: ContentRange | undefined): void {
+		this.range = range;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	setShowMetadata(show: boolean): void {
+		this.showMetadata = show;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	override invalidate(): void {
+		super.invalidate();
+		this.clearRenderCache();
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	setHideThinkingBlock(hide: boolean): void {
+		if (this.hideThinkingBlock === hide) return;
+		this.hideThinkingBlock = hide;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		} else {
+			this.clearRenderCache();
+		}
+	}
+
+	/** @deprecated Plain transcript has no connected rails. */
+	setContinuesToUser(_value: boolean): void {}
+
+	/** @deprecated Plain transcript has no connected rails. */
+	setConnectedToUser(_value: boolean): void {}
+
+	updateContent(message: AssistantMessage): void {
+		this.lastMessage = message;
+		this.clearRenderCache();
+
+		// Clear content container
+		this.contentContainer.clear();
+
+		const start = this.range?.startIndex ?? 0;
+		const end = this.range?.endIndex ?? message.content.length - 1;
+		const slice = message.content.slice(start, end + 1);
+
+		const hasVisibleContent = slice.some((content) => {
+			if (content.type === "text") return content.text.trim().length > 0;
+			return !this.hideThinkingBlock && content.type === "thinking" && content.thinking.trim().length > 0;
+		});
+		const hasTextContent = message.content.some((c) => c.type === "text" && c.text.trim().length > 0);
+		const hasToolContent = message.content.some((c) => isToolContentBlock(c));
+		// Claude Code often emits long reasoning blocks ahead of user-visible text/tool
+		// output in the same lifecycle. Keep chat output visible without requiring a
+		// manual thinking toggle every turn.
+		const shouldCapThinking = hasTextContent || hasToolContent || message.provider === "claude-code";
+
+		// Render content in order; non-text/thinking blocks are silently skipped
+		for (let i = 0; i < slice.length; i++) {
+			const content = slice[i];
+			if (content.type === "text" && content.text.trim()) {
+				// Assistant text messages with no background - trim the text
+				// Set paddingY=0 to avoid extra spacing before tool executions
+				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
+			} else if (content.type === "thinking" && content.thinking.trim()) {
+				if (this.hideThinkingBlock) continue;
+				// Add spacing only when another visible assistant content block follows.
+				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
+				const hasVisibleContentAfter = slice
+					.slice(i + 1)
+					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
+
+				const thinkingMarkdown = new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {
+					color: (text: string) => theme.fg("thinkingText", text),
+					italic: true,
+				});
+				// Keep visible chat output readable when thinking traces are long.
+				// Tool-bearing turns can stream text in a later assistant message.
+				if (shouldCapThinking) {
+					thinkingMarkdown.maxLines = 8;
+				}
+				this.contentContainer.addChild(thinkingMarkdown);
+				if (hasVisibleContentAfter) {
+					this.contentContainer.addChild(new Spacer(1));
+				}
+			}
+		}
+
+		// Metadata (errors, timestamp): gated on showMetadata so ranged instances stay clean
+		// until chat-controller explicitly enables it on the last segment at message_end.
+		if (this.showMetadata) {
+			// Check if aborted - show after partial content
+			// But only if there are no tool calls (tool execution components will show the error)
+			const hasToolCalls = message.content.some((c) => c.type === "toolCall");
+			if (!hasToolCalls) {
+				if (message.stopReason === "aborted") {
+					// "Operation aborted" is chat-controller's FABRICATED label for the
+					// same routine abort (controllers/chat-controller.ts injects it at
+					// message_end when stopReason === "aborted" with zero retries) — it
+					// slipped past the dim-path below and painted red after every forge
+					// worker teardown (operator feedback 2026-07-12, 2ª reclamação).
+					const realError =
+						message.errorMessage &&
+						message.errorMessage !== "Request was aborted" &&
+						message.errorMessage !== "Operation aborted";
+					if (hasVisibleContent) {
+						this.contentContainer.addChild(new Spacer(1));
+					}
+					// A GENERIC abort (no specific errorMessage) is routine, not an
+					// error: user ESC, or the forge worker teardown right after the
+					// `forge_unit_result` terminate — which painted a red "Operation
+					// aborted" between EVERY unit of a /forge auto run (operator
+					// feedback 2026-07-11). Render it dim; real messages stay red.
+					this.contentContainer.addChild(
+						realError
+							? new Text(theme.fg("error", message.errorMessage as string), 1, 0)
+							: new Text(theme.fg("dim", "⏹ interrompido"), 1, 0),
+					);
+				} else if (message.stopReason === "error") {
+					const errorMsg = message.errorMessage || "Unknown error";
+					this.contentContainer.addChild(new Spacer(1));
+					this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), 1, 0));
+				}
+			}
+
+		}
+	}
+
+	override render(width: number): string[] {
+		const cached = this.renderCache.get(`${width}:${this.renderVersion}`);
+		if (cached) return cached;
+
+		const frameWidth = Math.max(20, width);
+		const lines = super.render(frameWidth);
+		if (lines.length === 0) return [];
+		const metaParts = [];
+		if (this.lastMessage?.model) metaParts.push(this.lastMessage.model);
+		if (this.showMetadata && this.lastMessage?.timestamp != null) {
+			metaParts.push(formatTimestamp(this.lastMessage.timestamp, this.timestampFormat));
+		}
+		const rendered = renderPlainSpeakerMessage(lines, frameWidth, {
+			label: "FORGE",
+			meta: metaParts.length > 0 ? metaParts.join(" · ") : undefined,
+			tone: "assistant",
+		});
+		return this.renderCache.set(`${width}:${this.renderVersion}`, rendered);
+	}
+
+	private clearRenderCache(): void {
+		this.renderVersion++;
+		this.renderCache.clear();
+	}
+}

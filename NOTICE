@@ -1,0 +1,21 @@
+Forge 2.0
+Copyright (c) 2026 Vinicius Almeida
+
+This project is a fork of gsd-pi (https://github.com/open-gsd/gsd-pi),
+Copyright (c) 2026 Open GSD, licensed under the MIT License.
+
+gsd-pi itself vendors and builds upon the pi agent framework
+(https://github.com/earendil-works/pi, formerly badlogic/pi-mono),
+Copyright (c) 2025 Mario Zechner, licensed under the MIT License.
+The vendored pi packages live under packages/pi-* (pinned upstream
+reference: see scripts/pi-upstream.json).
+
+The Forge methodology (milestone → slice → task orchestration, dialectic
+review, emergent memory, anti-hallucination layer) originates from
+forge-agent (https://github.com/vh2224/forge-agent), Copyright (c) 2026
+Vinicius Almeida, MIT License.
+
+All original license texts are preserved in LICENSE. See
+FORGE2-DECISIONS.md in the incubation workspace for the architectural
+lineage of this fork (decision D1: gsd-pi stripped to harness core;
+D2: forge methodology implemented as a fresh extension).

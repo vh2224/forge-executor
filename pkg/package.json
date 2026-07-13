@@ -1,0 +1,8 @@
+{
+  "name": "@glittercowboy/gsd",
+  "version": "1.8.1",
+  "piConfig": {
+    "name": "forge",
+    "configDir": ".gsd"
+  }
+}
