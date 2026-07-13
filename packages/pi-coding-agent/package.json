@@ -33,7 +33,7 @@
     "copy-assets": "node scripts/copy-assets.cjs"
   },
   "dependencies": {
-    "@opengsd/contracts": "workspace:*",
+    "@opengsd/contracts": "^2.0.0",
     "@mariozechner/jiti": "^2.6.2",
     "@silvia-odwyer/photon-node": "0.3.4",
     "chalk": "5.6.2",
@@ -53,10 +53,10 @@
     "typebox": "1.1.38",
     "undici": "7.28.0",
     "yaml": "2.9.0",
-    "@gsd/native": "workspace:*",
-    "@gsd/pi-agent-core": "workspace:*",
-    "@gsd/pi-ai": "workspace:*",
-    "@gsd/pi-tui": "workspace:*",
+    "@gsd/native": "^2.0.0",
+    "@gsd/pi-agent-core": "^2.0.0",
+    "@gsd/pi-ai": "^2.0.0",
+    "@gsd/pi-tui": "^2.0.0",
     "@sinclair/typebox": "^0.34.41"
   },
   "devDependencies": {
@@ -69,8 +69,7 @@
     "@types/proper-lockfile": "4.1.4",
     "shx": "0.4.0",
     "typescript": "5.9.3",
-    "vitest": "4.1.0",
-    "@gsd/agent-core": "workspace:@forge/agent-core@*"
+    "vitest": "4.1.0"
   },
   "optionalDependencies": {
     "@mariozechner/clipboard": "0.3.6"

@@ -140,7 +140,8 @@
     "test:e2e:windows-smoke": "node --experimental-strip-types --test tests/e2e/sanity.e2e.test.ts tests/e2e/migration.e2e.test.ts tests/e2e/native-abi.e2e.test.ts",
     "test:e2e:docker": "node --experimental-strip-types --test \"tests/e2e/docker/**/*.e2e.test.ts\"",
     "test:ci": "node --experimental-strip-types --test --test-concurrency=1 tests/e2e/conversation-smoke.e2e.test.ts tests/e2e/agent-loop.e2e.test.ts tests/e2e/agent-loop-multiturn.e2e.test.ts tests/e2e/sanity.e2e.test.ts tests/e2e/forge-milestone.e2e.test.ts tests/e2e/forge-resilience.e2e.test.ts",
-    "verify:no-deleted-imports": "node scripts/verify-no-deleted-imports.cjs"
+    "verify:no-deleted-imports": "node scripts/verify-no-deleted-imports.cjs",
+    "prepare": "node scripts/link-workspace-packages.cjs || true"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.2.83",
