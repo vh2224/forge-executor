@@ -1,9 +1,10 @@
 # Release — tag v* → build → npm publish (com provenance) → GitHub Release.
 #
 # Setup único (uma vez, pelo dono do repo):
-#   1. npmjs.com → Access Tokens → Generate New Token → tipo "Automation"
-#   2. GitHub repo → Settings → Secrets and variables → Actions →
-#      New repository secret → nome: NPM_TOKEN → colar o token
+#   1. npmjs.com → Access Tokens → Generate New Token → "Granular Access Token"
+#      · Packages and scopes: Read and write
+#      · marque "Bypass two-factor authentication" (o CI não digita OTP)
+#   2. gh secret set NPM_TOKEN -R vh2224/forge-executor   (cola o token)
 #
 # Cortar um release:
 #   git tag v2.0.0 && git push origin v2.0.0
@@ -15,12 +16,12 @@ on:
 
 permissions:
   contents: write   # criar o GitHub Release
-  id-token: write   # npm provenance (asserção de origem do build)
+  id-token: write   # npm provenance (asserção de origem — só funciona no CI)
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -35,9 +36,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm run build
-
+      # prepublishOnly reroda a esteira inteira (sync de versões, verificadores,
+      # build, typecheck, validate-pack com smoke de instalação real) — a mesma
+      # que passou localmente. --provenance só é aceito aqui dentro do Actions.
       - name: Publish to npm
         run: npm publish --access public --provenance
         env:
