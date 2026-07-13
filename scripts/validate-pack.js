@@ -576,6 +576,10 @@ try {
 
   // --- Verify packaged non-linkable CLIs resolve their root-provided deps ---
   console.log('==> Verifying packaged daemon/cloud dependency resolution...');
+  // Fork curation: daemon and cloud gateway were pruned from Forge Executor.
+  if (!existsSync(join(ROOT, 'packages', 'daemon')) && !existsSync(join(ROOT, 'packages', 'cloud-mcp-gateway'))) {
+    console.log('    Skipped: daemon/cloud gateway pruned from this fork.');
+  } else {
   try {
     const daemonHelpOutput = execFileSync(process.execPath, [join(installedRoot, 'packages', 'daemon', 'bin', 'gsd-daemon.js'), '--help'], {
       cwd: installDir,
@@ -609,6 +613,7 @@ try {
     if (err.stdout) console.log(err.stdout);
     if (err.stderr) console.log(err.stderr);
     process.exit(1);
+  }
   }
 
   // --- Global install smoke (npx path: --ignore-scripts, then repair) ---
