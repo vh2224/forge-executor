@@ -72,8 +72,20 @@ export interface ModelCapabilityProfile {
  * `costRank`.
  */
 export const MODEL_CAPABILITIES: Record<string, ModelCapabilityProfile> = {
+  // Real production pool (2026-07-13). These are the refs that actually appear
+  // in `.gsd/models.md` — before this, every one of them fell through to the
+  // `standard` default, so the tier ceiling and cost tie-break for the live
+  // pool ran on placeholder data (fable-5 mis-tiered as standard, etc.).
+  // `capability` here is the STATIC tie-break used only by the per-pool
+  // `rankPool` path; the cross-pool `rankUnion` (domain-routed dispatches)
+  // reads the curated `.gsd/CAPABILITIES.md` matrix instead.
+  "claude-code/claude-fable-5": { tier: "max", capability: 96, cost: 100 },
   "claude-code/claude-opus-4-8": { tier: "max", capability: 95, cost: 90 },
   "claude-code/claude-sonnet-5": { tier: "standard", capability: 70, cost: 35 },
+  "openai-codex/gpt-5.6-sol": { tier: "max", capability: 92, cost: 88 },
+  "openai-codex/gpt-5.6-terra": { tier: "heavy", capability: 78, cost: 50 },
+  "openai-codex/gpt-5.6-luna": { tier: "standard", capability: 68, cost: 22 },
+  // Synthetic doubles kept for the routing-logic unit tests (not a real pool).
   "openai/gpt-5.5": { tier: "max", capability: 90, cost: 85 },
   "openai/gpt-5-mini": { tier: "light", capability: 45, cost: 15 },
 };

@@ -40,8 +40,10 @@ export const NON_DISPATCH_FIELDS = [
   "baselineModel",
   "modelApplied",
   "onUnitChange",
+  "reviewActivityListeners", // UI listener registry (M11 narrative strip): wired across runs, same posture as onUnitChange — not a per-dispatch decision
   "unitTokens",
   "workerStream",
+  "runRootSessionPath", // run-scoped session lineage (M11): set once at run entry, read by the driver for parentSession, cleared on reset — not a per-dispatch decision
 ] as const;
 
 /**

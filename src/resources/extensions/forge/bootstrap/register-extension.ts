@@ -14,6 +14,7 @@ import { findExactModelReferenceMatch } from "@gsd/pi-coding-agent/core/model-re
 import { registerForgeCommand } from "../commands/forge-command.js";
 import { createForgeCommandTool } from "../commands/forge-command-tool.js";
 import { createForgeUnitResultTool } from "../worker/unit-result.js";
+import { registerConversas } from "../conversas/register-conversas.js";
 import { getForgeAutoSession, scopedToolsFor } from "../auto/session.js";
 import { effortToThinkingLevel } from "../auto/effort.js";
 import { registerQueueWidget } from "../ui/queue-widget.js";
@@ -325,6 +326,7 @@ export function registerForgeExtension(pi: ExtensionAPI): void {
     ["auto.unit-scope", () => registerAutoUnitSetup(pi)],
     ["auto.evidence-capture", () => registerEvidenceCapture(pi)],
     ["auto.credential-exhaustion", () => registerCredentialExhaustion(pi)],
+    ["conversas", () => registerConversas(pi)],
     ["ui.queue-widget", () => registerQueueWidget(pi)],
     ["ui.unit-panel", () => registerUnitPanel(pi)],
   ];

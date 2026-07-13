@@ -27,6 +27,7 @@ import { buildMigrateReport, formatMigrateReport } from "../migrate/report.js";
 import { applyMigration, formatApplyReport } from "../migrate/apply.js";
 import { formatMilestoneFinale } from "../ui/finale.js";
 import { formatReviewDigest } from "../ui/review-digest.js";
+import { readLastConversationLine } from "../conversas/last-entry.js";
 import { CredentialRotator } from "@forge/agent-core/credential-rotation.js";
 import { runReviewCommand } from "./review-command.js";
 import { runAccountsCommand } from "./accounts-command.js";
@@ -253,7 +254,7 @@ export async function runAuto(
   // Bootstrap do container (B1) — sobrevive ao session-replacement.
   session.active = true;
   session.cmdCtx = ctx;
-  session.runRootSessionPath = ctx.sessionManager.getSessionFile() ?? null;
+  session.runRootSessionPath = ctx.sessionManager?.getSessionFile?.() ?? null;
   session.cwd = ctx.cwd;
   // Publish the milestone id for the durable evidence subscription
   // (`registerEvidenceCapture`), which stamps advisory `evidence` events but
@@ -476,6 +477,12 @@ function formatStatus(cwd: string = process.cwd()): string {
     } catch {
       // Gestation read failure — omit the block, never hide the init hint.
     }
+    try {
+      const lastConversation = readLastConversationLine(cwd);
+      if (lastConversation) lines.push("", lastConversation);
+    } catch {
+      // Conversation read failure — omit the line, never hide the init hint.
+    }
     lines.push(prefsLine);
     return lines.join("\n");
   }
@@ -567,6 +574,13 @@ function formatStatus(cwd: string = process.cwd()): string {
       if (gestations.length > 0) lines.push("", ...gestations);
     } catch {
       // Gestation read failure — omit the block, never hide the rest of status.
+    }
+
+    try {
+      const lastConversation = readLastConversationLine(cwd);
+      if (lastConversation) lines.push("", lastConversation);
+    } catch {
+      // Conversation read failure — omit the line, never hide the rest of status.
     }
 
     lines.push("", prefsLine);

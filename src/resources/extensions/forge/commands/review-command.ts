@@ -75,34 +75,40 @@ export async function runReviewCommand(
   const session = getForgeAutoSession();
   // Standalone review starts from this fresh operator context. The dispatcher
   // reads this run-scoped value later because its captured ctx may be stale
-  // after a prior replacement.
-  session.runRootSessionPath = ctx.sessionManager.getSessionFile() ?? null;
-  const resolveContext = options.resolveContext ?? {
-    session,
-    config: readModelsConfig(ctx.cwd),
-  };
-  // Keep the session cwd aligned even when this command is invoked outside auto.
-  resolveContext.session.cwd = ctx.cwd;
-  const reviewer = resolveModelForRole("reviewer", unit, { ...resolveContext, authorFamily });
-  const family = reviewer.family ?? "unknown";
-  const writePath = join(ctx.cwd, "docs", "forge", `${slug}-REVIEW-${family}.md`);
-  const dialectic: ReviewDialecticResult = await runReviewDialectic({
-    cwd: ctx.cwd,
-    milestoneId: state.milestone,
-    slice,
-    sliceTitle: rawTarget,
-    unit,
-    ctxForResolve: resolveContext,
-    dispatcher: options.dispatcher ?? productionReviewDispatcher(ctx),
-    reviewedOn: (options.now ?? new Date().toISOString()).slice(0, 10),
-    rounds: readReviewPrefs(ctx.cwd).rounds,
-    authorFamily,
-    artifactTarget: { writePath },
-    domain: /^S\d+$/i.test(rawTarget) ? scopeDomainFor(ctx.cwd, state.milestone, slice) : undefined,
-  });
-  const counts = dialectic.result.counts;
-  output(
-    ctx,
-    `⚖ Review de ${rawTarget} gravado em ${writePath} — ${counts.resolved} resolvido(s), ${counts.conceded} concedido(s), ${counts.open} aberto(s).`,
-  );
+  // after a prior replacement. Cleared in the `finally` below so this
+  // singleton field never outlives the standalone command that set it
+  // (S02/R3 review-fix).
+  session.runRootSessionPath = ctx.sessionManager?.getSessionFile?.() ?? null;
+  try {
+    const resolveContext = options.resolveContext ?? {
+      session,
+      config: readModelsConfig(ctx.cwd),
+    };
+    // Keep the session cwd aligned even when this command is invoked outside auto.
+    resolveContext.session.cwd = ctx.cwd;
+    const reviewer = resolveModelForRole("reviewer", unit, { ...resolveContext, authorFamily });
+    const family = reviewer.family ?? "unknown";
+    const writePath = join(ctx.cwd, "docs", "forge", `${slug}-REVIEW-${family}.md`);
+    const dialectic: ReviewDialecticResult = await runReviewDialectic({
+      cwd: ctx.cwd,
+      milestoneId: state.milestone,
+      slice,
+      sliceTitle: rawTarget,
+      unit,
+      ctxForResolve: resolveContext,
+      dispatcher: options.dispatcher ?? productionReviewDispatcher(ctx),
+      reviewedOn: (options.now ?? new Date().toISOString()).slice(0, 10),
+      rounds: readReviewPrefs(ctx.cwd).rounds,
+      authorFamily,
+      artifactTarget: { writePath },
+      domain: /^S\d+$/i.test(rawTarget) ? scopeDomainFor(ctx.cwd, state.milestone, slice) : undefined,
+    });
+    const counts = dialectic.result.counts;
+    output(
+      ctx,
+      `⚖ Review de ${rawTarget} gravado em ${writePath} — ${counts.resolved} resolvido(s), ${counts.conceded} concedido(s), ${counts.open} aberto(s).`,
+    );
+  } finally {
+    session.runRootSessionPath = null;
+  }
 }

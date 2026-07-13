@@ -133,12 +133,20 @@ export function createForgeCommandTool(pi: ExtensionAPI) {
 				};
 			}
 
-			await (session.livePi ?? pi).sendMessage({
-				customType: FORGE_COMMAND_REQUEST_TYPE,
-				content: `Comando sancionado na conversa: ${command}`,
-				display: false,
-				details: { command },
-			});
+			try {
+				await (session.livePi ?? pi).sendMessage({
+					customType: FORGE_COMMAND_REQUEST_TYPE,
+					content: `Comando sancionado na conversa: ${command}`,
+					display: false,
+					details: { command },
+				});
+			} catch (error) {
+				// The host can drop this request (e.g. a second confirmed call in the
+				// same turn while one is already pending) — never claim it was
+				// scheduled when it was not.
+				const reason = error instanceof Error ? error.message : String(error);
+				return refusal(`Não foi possível agendar \`${command}\`: ${reason}`);
+			}
 			return {
 				content: [{ type: "text" as const, text: `Comando \`${command}\` agendado — executa quando este turno terminar.` }],
 				details: { executed: "deferred", command } satisfies ForgeCommandToolDetails,

@@ -137,7 +137,7 @@ export async function runResearchModelsCommand(
   // other command handler that ever reaches `ctx.newSession()`, B2).
   session.active = true;
   session.cmdCtx = ctx;
-  session.runRootSessionPath = ctx.sessionManager.getSessionFile() ?? null;
+  session.runRootSessionPath = ctx.sessionManager?.getSessionFile?.() ?? null;
   session.cwd = ctx.cwd;
   session.milestoneId = milestoneId;
   session.baselineModel = ctx.model ?? undefined;

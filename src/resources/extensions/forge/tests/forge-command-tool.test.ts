@@ -174,6 +174,19 @@ describe("forge_command tool", () => {
 		assert.deepEqual(messages, []);
 	});
 
+	test("reports refused, not deferred, when the host drops the request", async () => {
+		const pi = {
+			sendMessage: async () => {
+				throw new Error("Pedido de comando Forge ignorado: já há um comando pendente.");
+			},
+		} as unknown as ExtensionAPI;
+		const result = await invoke(createForgeCommandTool(pi), { subcommand: "auto", confirmed: true });
+
+		assert.equal(executed(result), "refused");
+		assert.match(resultText(result), /Não foi possível agendar/);
+		assert.match(resultText(result), /já há um comando pendente/);
+	});
+
 	test("uses the live session API after a replacement rather than the registration API", async () => {
 		const registration = fakePi();
 		const live = fakePi();

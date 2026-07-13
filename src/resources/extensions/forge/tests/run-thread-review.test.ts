@@ -81,11 +81,23 @@ test("standalone /forge review captures its fresh operator session as the run ro
   writeFileSync(join(cwd, "changed.ts"), "export const changed = true;\n");
   const session = getForgeAutoSession();
   session.reset();
+  // The command sets runRootSessionPath from ctx.sessionManager.getSessionFile()
+  // BEFORE dispatch and CLEARS it in the `finally` (S02/R3: the singleton field
+  // must never outlive the command), and the dispatcher only runs when there is
+  // a diff. So the observable contract is "the command consulted the operator's
+  // session file as run root" — spy on that read, and confirm the field is
+  // cleared afterward so the singleton never lingers.
+  let readOperatorSession = false;
   const ctx = {
     cwd,
     hasUI: true,
     ui: { mode: "tui", notify: () => undefined },
-    sessionManager: { getSessionFile: () => ROOT },
+    sessionManager: {
+      getSessionFile: () => {
+        readOperatorSession = true;
+        return ROOT;
+      },
+    },
   } as unknown as ExtensionCommandContext;
 
   await runReviewCommand(ctx, "target", {
@@ -93,6 +105,7 @@ test("standalone /forge review captures its fresh operator session as the run ro
     resolveContext: { session: session as never, config: { pools: {}, roles: {}, constraints: {} } },
   });
 
-  assert.equal(session.runRootSessionPath, ROOT);
+  assert.equal(readOperatorSession, true, "standalone review reads the fresh operator session as the run root");
+  assert.equal(session.runRootSessionPath, null, "and clears it in finally so the singleton never lingers");
   session.reset();
 });

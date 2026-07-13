@@ -559,7 +559,7 @@ export async function runTaskCommand(
   // runAuto exactly.
   session.active = true;
   session.cmdCtx = ctx;
-  session.runRootSessionPath = ctx.sessionManager.getSessionFile() ?? null;
+  session.runRootSessionPath = ctx.sessionManager?.getSessionFile?.() ?? null;
   session.cwd = ctx.cwd;
   session.milestoneId = milestoneId;
   session.baselineModel = ctx.model ?? undefined;

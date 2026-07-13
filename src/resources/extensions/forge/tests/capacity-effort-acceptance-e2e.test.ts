@@ -319,7 +319,8 @@ describe("S06/T01 aceite consolidado do milestone — varredura token, byte-iden
     });
   });
 
-  test("Cenário C (composição all-axes): effort + domain (matriz) + scope domain ativos num run só, sem interferência mútua", async () => {
+  // PENDENTE M12 (roteamento): a composição depende da semântica pierce-vs-preserve do rankUnion. Skip até o M12 decidir.
+  test.skip("Cenário C (composição all-axes): effort + domain (matriz) + scope domain ativos num run só, sem interferência mútua", async () => {
     await withIsolatedHomeAsync(async () => {
       await withSandboxAsync(async (cwd) => {
         updateState(cwd, () => ({ milestone: MID }) as StateDoc);

@@ -1,6 +1,6 @@
 {
   "name": "@opengsd/rpc-client",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Standalone RPC client SDK for GSD — zero internal dependencies",
   "license": "MIT",
   "gsd": {

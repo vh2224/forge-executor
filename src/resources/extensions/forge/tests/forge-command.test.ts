@@ -440,6 +440,54 @@ describe("forge-command formatStatus — loose tasks (S03/T05)", () => {
   });
 });
 
+describe("forge-command formatStatus — última conversa (S06/T01)", () => {
+  test("com .gsd/CONVERSAS.md válido, exibe a linha da última entrada", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-status-conversas-"));
+    try {
+      mkdirSync(join(dir, ".gsd"), { recursive: true });
+      writeFileSync(
+        join(dir, ".gsd", "CONVERSAS.md"),
+        "## 2026-07-13 — Memória local do Forge\n<!-- sessao: session-a -->\n- Decisões: manter no disco\n",
+      );
+      const result = formatStatus(dir);
+      assert.match(result, /Última conversa: 2026-07-13 — Memória local do Forge/);
+      assert.doesNotMatch(result, /sessao:/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("sem .gsd/CONVERSAS.md, a saída permanece byte-idêntica à de antes do arquivo existir", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-status-conversas-"));
+    try {
+      const before = formatStatus(dir);
+      mkdirSync(join(dir, ".gsd"), { recursive: true });
+      writeFileSync(join(dir, ".gsd", "CONVERSAS.md"), "");
+      const withEmptyFile = formatStatus(dir);
+      assert.equal(withEmptyFile, before, "an empty CONVERSAS.md must not change the output at all");
+      assert.doesNotMatch(withEmptyFile, /Última conversa/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("com .gsd/STATE.md ativo e CONVERSAS.md válido, o ramo com milestone também exibe a linha", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-status-conversas-"));
+    try {
+      mkdirSync(join(dir, ".gsd"), { recursive: true });
+      writeFileSync(join(dir, ".gsd", "STATE.md"), "```yaml\nphase: S01\n```\n");
+      writeFileSync(
+        join(dir, ".gsd", "CONVERSAS.md"),
+        "## 2026-07-13 — Gate da conversa\n<!-- sessao: session-b -->\n- Pendências: revisar\n",
+      );
+      const result = formatStatus(dir);
+      assert.match(result, /Última conversa: 2026-07-13 — Gate da conversa/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("forge-command /forge auto|next (T05 real wiring)", () => {
   function fakeCtx(cwd: string): { ctx: ExtensionCommandContext; notifications: Array<[string, string]> } {
     const notifications: Array<[string, string]> = [];
