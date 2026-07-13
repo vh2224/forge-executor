@@ -747,7 +747,14 @@ try {
         [
           `const { initResources } = await import(${JSON.stringify(pathToFileURL(join(globalRoot, 'dist', 'resource-loader.js')).href)});`,
           `initResources(${JSON.stringify(agentDir)});`,
-          `await import(${JSON.stringify(pathToFileURL(join(agentDir, 'extensions', 'gsd', 'commands', 'handlers', 'workflow.js')).href)});`,
+          // Fork adaptation: the gsd extension (and its compiled .js handlers)
+          // was pruned; the forge extension ships as .ts (jiti-loaded), so a
+          // plain ESM import can't probe it. Verify the SAME property — hoisted
+          // externals resolve from inside the synced extension dir — via
+          // createRequire anchored there.
+          `const { createRequire } = await import('node:module');`,
+          `const req = createRequire(${JSON.stringify(join(agentDir, 'extensions', 'forge', 'probe.js').replace(/\\/g, '/'))});`,
+          `req.resolve('yaml'); req.resolve('minimatch');`,
         ].join('\n'),
       ],
       {
