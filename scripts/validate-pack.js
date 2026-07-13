@@ -640,7 +640,7 @@ try {
         npm_config_cache: npmCacheDir,
       }),
     }).trim();
-    const globalRoot = join(globalNodeModules, '@opengsd', 'gsd-pi');
+    const globalRoot = join(globalNodeModules, ...rootPkgName.split('/'));
 
     // Workspace packages ship under packages/*/dist and are symlinked into
     // node_modules by the postinstall script, which `--ignore-scripts` skipped.
