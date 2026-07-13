@@ -378,9 +378,6 @@ importers:
 
   packages/pi-coding-agent:
     dependencies:
-      '@gsd/agent-core':
-        specifier: workspace:@forge/agent-core@*
-        version: link:../forge-agent-core
       '@gsd/native':
         specifier: workspace:*
         version: link:../native
@@ -457,6 +454,9 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
+      '@gsd/agent-core':
+        specifier: workspace:@forge/agent-core@*
+        version: link:../forge-agent-core
       '@types/cross-spawn':
         specifier: 6.0.6
         version: 6.0.6
